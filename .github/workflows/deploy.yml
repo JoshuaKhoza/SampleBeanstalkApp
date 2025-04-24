@@ -10,10 +10,13 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      DOTNET_VERSION: '9.0'
+      DOTNET_VERSION: '6.0.x'
       PROJECT_NAME: 'SampleBeanstalkApp'
       ZIP_FILE: 'publish.zip'
       S3_KEY: 'beanstalk-deployments/publish.zip'
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
 
     steps:
     - name: Checkout code
@@ -31,11 +34,7 @@ jobs:
 
     - name: Upload ZIP to S3
       run: |
-        aws s3 cp ${{ env.ZIP_FILE }} s3://${{ secrets.S3_BUCKET }}/${{ env.S3_KEY }} --region ${{ secrets.AWS_REGION }}
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        AWS_REGION: ${{ secrets.AWS_REGION }}
+        aws s3 cp ${{ env.ZIP_FILE }} s3://${{ secrets.S3_BUCKET }}/${{ env.S3_KEY }} --region ${{ env.AWS_REGION }}
 
     - name: Create EB Application Version and Deploy to GREEN
       run: |
@@ -46,20 +45,20 @@ jobs:
           --application-name "${{ secrets.EB_APP_NAME }}" \
           --version-label "$VERSION_LABEL" \
           --source-bundle S3Bucket="${{ secrets.S3_BUCKET }}",S3Key="${{ env.S3_KEY }}" \
-          --region "${{ secrets.AWS_REGION }}"
+          --region "${{ env.AWS_REGION }}"
 
         echo "Deploying to GREEN environment"
         aws elasticbeanstalk update-environment \
           --environment-name "${{ secrets.EB_ENV_GREEN }}" \
           --version-label "$VERSION_LABEL" \
-          --region "${{ secrets.AWS_REGION }}"
+          --region "${{ env.AWS_REGION }}"
 
     - name: Wait for Green Deployment to Complete
       run: |
         echo "Waiting for GREEN environment to be ready..."
         aws elasticbeanstalk wait environment-updated \
           --environment-name "${{ secrets.EB_ENV_GREEN }}" \
-          --region "${{ secrets.AWS_REGION }}"
+          --region "${{ env.AWS_REGION }}"
 
     - name: Swap Blue-Green Environments
       run: |
@@ -67,4 +66,4 @@ jobs:
         aws elasticbeanstalk swap-environment-cnames \
           --source-environment-name "${{ secrets.EB_ENV_BLUE }}" \
           --destination-environment-name "${{ secrets.EB_ENV_GREEN }}" \
-          --region "${{ secrets.AWS_REGION }}"
+          --region "${{ env.AWS_REGION }}"
