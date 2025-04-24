@@ -34,8 +34,10 @@ jobs:
 
     - name: Upload ZIP to S3
       run: |
-        aws s3 cp ${{ env.ZIP_FILE }} s3://${{ secrets.S3_BUCKET }}/${{ env.S3_KEY }} --region ${{ env.AWS_REGION }}
-
+        aws s3 cp ${{ env.ZIP_FILE }} s3://${{ secrets.S3_BUCKET }}/beanstalk-deployments/${{ env.ZIP_FILE }} \
+          --acl private \
+          --region ${{ secrets.AWS_REGION }}
+      
     - name: Check S3 for ZIP file
       run: |
         echo "Checking if publish.zip exists in S3..."
@@ -44,13 +46,15 @@ jobs:
     - name: Create EB Application Version and Deploy to GREEN
       run: |
         VERSION_LABEL="app-$(date +%s)"
+        ZIP_PATH="beanstalk-deployments/${{ env.ZIP_FILE }}"
+    
         echo "Creating new EB app version: $VERSION_LABEL"
-
+    
         aws elasticbeanstalk create-application-version \
           --application-name "${{ secrets.EB_APP_NAME }}" \
           --version-label "$VERSION_LABEL" \
-          --source-bundle S3Bucket="${{ secrets.S3_BUCKET }}",S3Key="${{ env.S3_KEY }}" \
-          --region "${{ env.AWS_REGION }}"
+          --source-bundle S3Bucket="${{ secrets.S3_BUCKET }}",S3Key="$ZIP_PATH" \
+          --region "${{ secrets.AWS_REGION }}"
 
         echo "Deploying to GREEN environment"
         aws elasticbeanstalk update-environment \
