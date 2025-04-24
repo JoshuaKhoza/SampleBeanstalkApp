@@ -36,6 +36,11 @@ jobs:
       run: |
         aws s3 cp ${{ env.ZIP_FILE }} s3://${{ secrets.S3_BUCKET }}/${{ env.S3_KEY }} --region ${{ env.AWS_REGION }}
 
+    - name: Check S3 for ZIP file
+      run: |
+        echo "Checking if publish.zip exists in S3..."
+        aws s3 ls s3://${{ secrets.S3_BUCKET }}/beanstalk-deployments/ --region ${{ env.AWS_REGION }}
+
     - name: Create EB Application Version and Deploy to GREEN
       run: |
         VERSION_LABEL="app-$(date +%s)"
