@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      DOTNET_VERSION: '6.0.x'
+      DOTNET_VERSION: '9.0'
       PROJECT_NAME: 'SampleBeanstalkApp'
       ZIP_FILE: 'publish.zip'
       S3_KEY: 'beanstalk-deployments/publish.zip'
