@@ -13,6 +13,7 @@ jobs:
       DOTNET_VERSION: '9.0'
       PROJECT_NAME: 'SampleBeanstalkApp'
       ZIP_FILE: 'publish.zip'
+      S3_KEY: 'beanstalk-deployments/publish.zip'
 
     steps:
     - name: Checkout code
@@ -28,32 +29,26 @@ jobs:
         dotnet publish -c Release -o publish --self-contained true -r linux-x64
         zip -r ${{ env.ZIP_FILE }} publish/
 
-    - name: Upload artifact to S3
-      uses: jakejarvis/s3-sync-action@master
-      with:
-        args: --acl private
+    - name: Upload ZIP to S3
+      run: |
+        aws s3 cp ${{ env.ZIP_FILE }} s3://${{ secrets.S3_BUCKET }}/${{ env.S3_KEY }} --region ${{ secrets.AWS_REGION }}
       env:
-        AWS_S3_BUCKET: ${{ secrets.S3_BUCKET }}
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_REGION: ${{ secrets.AWS_REGION }}
-        SOURCE_DIR: './'
-        DEST_DIR: 'beanstalk-deployments'
 
-    - name: Deploy to Green Environment
+    - name: Create EB Application Version and Deploy to GREEN
       run: |
         VERSION_LABEL="app-$(date +%s)"
-        ZIP_PATH="beanstalk-deployments/${{ env.ZIP_FILE }}"
-
-        echo "Creating new application version: $VERSION_LABEL"
+        echo "Creating new EB app version: $VERSION_LABEL"
 
         aws elasticbeanstalk create-application-version \
           --application-name "${{ secrets.EB_APP_NAME }}" \
           --version-label "$VERSION_LABEL" \
-          --source-bundle S3Bucket="${{ secrets.S3_BUCKET }}",S3Key="$ZIP_PATH" \
+          --source-bundle S3Bucket="${{ secrets.S3_BUCKET }}",S3Key="${{ env.S3_KEY }}" \
           --region "${{ secrets.AWS_REGION }}"
 
-        echo "Deploying to GREEN environment: ${{ secrets.EB_ENV_GREEN }}"
+        echo "Deploying to GREEN environment"
         aws elasticbeanstalk update-environment \
           --environment-name "${{ secrets.EB_ENV_GREEN }}" \
           --version-label "$VERSION_LABEL" \
