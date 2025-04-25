@@ -1,12 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "zOT74sN7wf4=",
+  "dgSpecHash": "YsxcUJIU43k=",
   "success": true,
   "projectFilePath": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\SampleBeanstalkApp.csproj",
-  "expectedPackageFiles": [
-    "C:\\Users\\client\\.nuget\\packages\\microsoft.netcore.app.runtime.linux-x64\\9.0.4\\microsoft.netcore.app.runtime.linux-x64.9.0.4.nupkg.sha512",
-    "C:\\Users\\client\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.linux-x64\\9.0.4\\microsoft.aspnetcore.app.runtime.linux-x64.9.0.4.nupkg.sha512",
-    "C:\\Users\\client\\.nuget\\packages\\microsoft.netcore.app.host.linux-x64\\9.0.4\\microsoft.netcore.app.host.linux-x64.9.0.4.nupkg.sha512"
-  ],
+  "expectedPackageFiles": [],
   "logs": []
 }

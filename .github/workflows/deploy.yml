@@ -1,78 +1,106 @@
-name: Deploy to AWS Elastic Beanstalk (Blue-Green)
+name: Deploy .NET App to Elastic Beanstalk
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
-  deploy:
-    name: Deploy .NET App via Blue-Green
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     env:
       DOTNET_VERSION: '9.0'
-      PROJECT_NAME: 'SampleBeanstalkApp'
-      ZIP_FILE: 'publish.zip'
-      S3_KEY: 'beanstalk-deployments/publish.zip'
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_S3_BUCKET: ${{ secrets.S3_BUCKET }}
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Setup .NET Core SDK
+    - name: Set up .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Publish .NET app
-      run: |
-        dotnet publish -c Release -o publish --self-contained true -r linux-x64
-        zip -r ${{ env.ZIP_FILE }} publish/
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Publish
+      run: dotnet publish -c Release -o publish_output
+
+    - name: Zip publish output
+      run: zip -r app.zip publish_output/*
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
 
     - name: Upload ZIP to S3
       run: |
-        aws s3 cp ${{ env.ZIP_FILE }} s3://${{ secrets.S3_BUCKET }}/beanstalk-deployments/${{ env.ZIP_FILE }} \
-          --acl private \
-          --region ${{ secrets.AWS_REGION }}
+        aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ github.run_id }}.zip
 
-    - name: Check S3 for ZIP file
+    - name: Determine inactive environment
+      id: inactive_env
       run: |
-        echo "Checking if publish.zip exists in S3..."
-        aws s3 ls s3://${{ secrets.S3_BUCKET }}/beanstalk-deployments/ --region ${{ env.AWS_REGION }}
+        ACTIVE_ENV=$(aws elasticbeanstalk describe-environments \
+          --application-name ${{ secrets.EB_APP_NAME }} \
+          --query "Environments[?Status=='Ready' && Health=='Green'].EnvironmentName" \
+          --output text)
 
-    - name: Create EB Application Version and Deploy to GREEN
+        if [ "$ACTIVE_ENV" == "${{ secrets.EB_ENV_BLUE }}" ]; then
+          echo "target=${{ secrets.EB_ENV_GREEN }}" >> $GITHUB_OUTPUT
+        else
+          echo "target=${{ secrets.EB_ENV_BLUE }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create new app version
       run: |
-        VERSION_LABEL="app-$(date +%s)"
-        ZIP_PATH="beanstalk-deployments/${{ env.ZIP_FILE }}"
-    
-        echo "Creating new EB app version: $VERSION_LABEL"
-    
         aws elasticbeanstalk create-application-version \
-          --application-name "${{ secrets.EB_APP_NAME }}" \
-          --version-label "$VERSION_LABEL" \
-          --source-bundle S3Bucket="${{ secrets.S3_BUCKET }}",S3Key="$ZIP_PATH" \
-          --region "${{ secrets.AWS_REGION }}"
+          --application-name ${{ secrets.EB_APP_NAME }} \
+          --version-label "ver-${{ github.run_id }}" \
+          --source-bundle S3Bucket=${{ env.AWS_S3_BUCKET }},S3Key=app-${{ github.run_id }}.zip
 
-        echo "Deploying to GREEN environment"
-        aws elasticbeanstalk update-environment \
-          --environment-name "${{ secrets.EB_ENV_GREEN }}" \
-          --version-label "$VERSION_LABEL" \
-          --region "${{ env.AWS_REGION }}"
-
-    - name: Wait for Green Deployment to Complete
+    - name: Deploy to inactive environment
       run: |
-        echo "Waiting for GREEN environment to be ready..."
-        aws elasticbeanstalk wait environment-updated \
-          --environment-name "${{ secrets.EB_ENV_GREEN }}" \
-          --region "${{ env.AWS_REGION }}"
+        aws elasticbeanstalk update-environment \
+          --environment-name ${{ steps.inactive_env.outputs.target }} \
+          --version-label "ver-${{ github.run_id }}"
+
+    - name: Wait for environment to become healthy
+      run: |
+        echo "Waiting for ${{ steps.inactive_env.outputs.target }} to be healthy..."
+        for i in {1..30}; do
+          STATUS=$(aws elasticbeanstalk describe-environments \
+            --environment-names ${{ steps.inactive_env.outputs.target }} \
+            --query "Environments[0].Health" \
+            --output text)
+          echo "Health: $STATUS"
+          if [ "$STATUS" == "Green" ]; then
+            break
+          fi
+          sleep 20
+        done
+
+    - name: Smoke Test
+      run: |
+        ENV_URL=$(aws elasticbeanstalk describe-environments \
+          --environment-names ${{ steps.inactive_env.outputs.target }} \
+          --query "Environments[0].CNAME" \
+          --output text)
+        echo "Testing http://$ENV_URL"
+        curl -f http://$ENV_URL || exit 1
 
     - name: Swap Blue-Green Environments
       run: |
-        echo "Swapping CNAMEs between BLUE and GREEN"
         aws elasticbeanstalk swap-environment-cnames \
-          --source-environment-name "${{ secrets.EB_ENV_BLUE }}" \
-          --destination-environment-name "${{ secrets.EB_ENV_GREEN }}" \
-          --region "${{ env.AWS_REGION }}"
+          --source-environment-name ${{ steps.inactive_env.outputs.target }} \
+          --destination-environment-name ${{ steps.inactive_env.outputs.target == secrets.BLUE_ENV && secrets.GREEN_ENV || secrets.BLUE_ENV }}
