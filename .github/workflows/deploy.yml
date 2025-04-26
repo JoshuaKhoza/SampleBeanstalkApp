@@ -8,7 +8,6 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     outputs:
       inactive_env: ${{ steps.inactive_env.outputs.target }}
 
@@ -48,10 +47,9 @@ jobs:
         aws-region: ${{ secrets.AWS_REGION }}
 
     - name: Upload ZIP to S3
-      run: |
-        aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ github.run_id }}.zip
+      run: aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ github.run_id }}.zip
 
-    - name: Create new app version
+    - name: Create new application version
       run: |
         aws elasticbeanstalk create-application-version \
           --application-name ${{ secrets.EB_APP_NAME }} \
@@ -78,12 +76,14 @@ jobs:
           --environment-name ${{ steps.inactive_env.outputs.target }} \
           --version-label "ver-${{ github.run_id }}"
 
-    - name: Wait for environment to be healthy
+    - name: Wait for inactive environment to be healthy
       run: |
+        echo "Waiting for ${{ steps.inactive_env.outputs.target }} to be healthy..."
         for i in {1..30}; do
           STATUS=$(aws elasticbeanstalk describe-environments \
             --environment-names ${{ steps.inactive_env.outputs.target }} \
-            --query "Environments[0].Health" --output text)
+            --query "Environments[0].Health" \
+            --output text)
           echo "Health: $STATUS"
           if [ "$STATUS" == "Green" ]; then
             break
@@ -95,7 +95,8 @@ jobs:
       run: |
         ENV_URL=$(aws elasticbeanstalk describe-environments \
           --environment-names ${{ steps.inactive_env.outputs.target }} \
-          --query "Environments[0].CNAME" --output text)
+          --query "Environments[0].CNAME" \
+          --output text)
         echo "Testing http://$ENV_URL"
         curl -f http://$ENV_URL || exit 1
 
@@ -104,15 +105,13 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: http://placeholder
     steps:
-      - name: Wait for manual approval
-        run: echo "Approve to swap environments"
+      - name: Await manual approval
+        run: echo "Waiting for manual approval in GitHub UI..."
 
   swap-cnames:
-    needs: [build-and-deploy, manual-approval]
+    needs: manual-approval
     runs-on: ubuntu-latest
-
     steps:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
@@ -121,23 +120,20 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: Get current active environment
-      id: active_env
+    - name: Determine active and inactive environments
+      id: swap
       run: |
-        ACTIVE=$(aws elasticbeanstalk describe-environments \
-          --application-name ${{ secrets.EB_APP_NAME }} \
-          --query "Environments[?Status=='Ready' && Health=='Green'].EnvironmentName" \
-          --output text)
+        INACTIVE=${{ needs.build-and-deploy.outputs.inactive_env }}
+        if [ "$INACTIVE" == "${{ secrets.EB_ENV_BLUE }}" ]; then
+          ACTIVE=${{ secrets.EB_ENV_GREEN }}
+        else
+          ACTIVE=${{ secrets.EB_ENV_BLUE }}
+        fi
         echo "active=$ACTIVE" >> $GITHUB_OUTPUT
+        echo "inactive=$INACTIVE" >> $GITHUB_OUTPUT
 
     - name: Swap CNAMEs
       run: |
         aws elasticbeanstalk swap-environment-cnames \
-          --source-environment-name "${{ steps.active_env.outputs.active }}" \
-          --destination-environment-name "${{ needs.build-and-deploy.outputs.inactive_env }}"
-
-    - name: Tag previous environment as inactive
-      run: |
-        aws elasticbeanstalk update-tags-for-resource \
-          --resource-arn arn:aws:elasticbeanstalk:${{ secrets.AWS_REGION }}:${{ secrets.AWS_ACCOUNT_ID }}:environment/${{ secrets.EB_APP_NAME }}/${{ steps.active_env.outputs.active }} \
-          --tags Key=Status,Value=Inactive
+          --source-environment-name "${{ steps.swap.outputs.active }}" \
+          --destination-environment-name "${{ steps.swap.outputs.inactive }}"
