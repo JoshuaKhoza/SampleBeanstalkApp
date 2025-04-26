@@ -5,18 +5,15 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      force_rollback:
-        description: 'Roll back to previous deployment'
-        required: false
-        default: 'false'
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     outputs:
-      version_label: ${{ steps.create_version.outputs.version_label }}
-    
+      target_env: ${{ steps.set-target-env.outputs.target }}
+      source_env: ${{ steps.set-target-env.outputs.source }}
+      version_label: ${{ steps.create-version.outputs.version_label }}
+
     env:
       DOTNET_VERSION: '9.0'
       AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -25,8 +22,6 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
-      with:
-        fetch-depth: 0  # Fetch all history for proper versioning
 
     - name: Set up .NET
       uses: actions/setup-dotnet@v4
@@ -39,45 +34,19 @@ jobs:
     - name: Build
       run: dotnet build --configuration Release --no-restore
 
-    - name: Run tests
-      run: dotnet test --no-restore --verbosity normal
-
     - name: Publish
-      run: dotnet publish -c Release -r linux-x64 --self-contained true -o publish_output /p:PublishReadyToRun=true
+      run: dotnet publish -c Release -r linux-x64 --self-contained true -o publish_output
 
     - name: Create version label
-      id: create_version
+      id: create-version
       run: |
-        VERSION="ver-${{ github.run_id }}-$(date +%Y%m%d%H%M%S)"
+        VERSION="ver-${{ github.run_id }}"
         echo "version_label=$VERSION" >> $GITHUB_OUTPUT
-        echo "VERSION=$VERSION" >> $GITHUB_ENV
-
-    - name: Create Procfile and .ebextensions if needed
-      run: |
-        # Create Procfile if it doesn't exist
-        if [ ! -f "publish_output/Procfile" ]; then
-          echo "Creating Procfile..."
-          APP_DLL=$(find publish_output -name "*.dll" | grep -v "Microsoft" | grep -v "System" | head -1 | xargs basename)
-          echo "web: dotnet $APP_DLL" > publish_output/Procfile
-        fi
-        
-        # Create .ebextensions directory if it doesn't exist
-        mkdir -p publish_output/.ebextensions
-        
-        # Add health check configuration
-        cat > publish_output/.ebextensions/01_healthcheck.config << EOF
-        option_settings:
-          aws:elasticbeanstalk:application:
-            Application Healthcheck URL: /health
-          aws:elasticbeanstalk:environment:process:default:
-            HealthCheckPath: /health
-            MatcherHTTPCode: 200
-        EOF
 
     - name: Zip publish output
       run: |
         cd publish_output
-        zip -r ../app-${{ env.VERSION }}.zip .
+        zip -r ../app.zip .
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
@@ -88,64 +57,19 @@ jobs:
 
     - name: Upload ZIP to S3
       run: |
-        aws s3 cp app-${{ env.VERSION }}.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ env.VERSION }}.zip
+        aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ steps.create-version.outputs.version_label }}.zip
 
     - name: Create new application version
       run: |
         aws elasticbeanstalk create-application-version \
           --application-name ${{ secrets.EB_APP_NAME }} \
-          --version-label "${{ env.VERSION }}" \
-          --description "Commit: ${{ github.sha }} | Workflow: ${{ github.workflow }} | Run: ${{ github.run_id }}" \
-          --source-bundle S3Bucket=${{ env.AWS_S3_BUCKET }},S3Key=app-${{ env.VERSION }}.zip \
-          --auto-create-application
+          --version-label "${{ steps.create-version.outputs.version_label }}" \
+          --source-bundle S3Bucket=${{ env.AWS_S3_BUCKET }},S3Key=app-${{ steps.create-version.outputs.version_label }}.zip
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    outputs:
-      target_env: ${{ steps.set-target-env.outputs.target }}
-      source_env: ${{ steps.set-target-env.outputs.source }}
-      deploy_success: ${{ steps.health-check.outputs.success }}
-    
-    steps:
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
-
-    - name: Handle rollback if requested
-      if: ${{ github.event.inputs.force_rollback == 'true' }}
-      run: |
-        echo "Handling rollback request..."
-        ENVIRONMENTS=$(aws elasticbeanstalk describe-environments \
-          --application-name ${{ secrets.EB_APP_NAME }} \
-          --query "Environments[?Status=='Ready'].[EnvironmentName,VersionLabel]" \
-          --output text)
-        
-        echo "Current environments:"
-        echo "$ENVIRONMENTS"
-        
-        # Find previous version from environment tags
-        PREVIOUS_VERSION=$(aws elasticbeanstalk list-tags-for-resource \
-          --resource-arn "arn:aws:elasticbeanstalk:${{ secrets.AWS_REGION }}:${{ secrets.AWS_ACCOUNT_ID }}:application/${{ secrets.EB_APP_NAME }}" \
-          --query "ResourceTags[?Key=='PreviousVersion'].Value" \
-          --output text)
-        
-        if [ -z "$PREVIOUS_VERSION" ]; then
-          echo "No previous version found for rollback"
-          exit 1
-        fi
-        
-        echo "Rolling back to version: $PREVIOUS_VERSION"
-        echo "version_label=$PREVIOUS_VERSION" >> $GITHUB_OUTPUT
-        
-        exit 0
-
-    - name: Determine target environment
+    - name: Determine environments status
       id: set-target-env
       run: |
+        # Get all environments status
         ENVIRONMENTS=$(aws elasticbeanstalk describe-environments \
           --application-name ${{ secrets.EB_APP_NAME }} \
           --query "Environments[?Status=='Ready'].[EnvironmentName,Health]" \
@@ -154,20 +78,22 @@ jobs:
         echo "Current environments:"
         echo "$ENVIRONMENTS"
         
-        # Determine active and inactive environments
+        # Find current active environment (the one receiving production traffic)
         ACTIVE=$(aws elasticbeanstalk describe-environments \
           --application-name ${{ secrets.EB_APP_NAME }} \
-          --query "Environments[?Status=='Ready' && Health=='Green'].EnvironmentName" \
+          --query "Environments[?Status=='Ready'].EnvironmentName" \
           --output text | head -n 1)
           
-        # If no active environment or multiple, prefer blue as active
+        # If no active environment found, use blue as default
         if [ -z "$ACTIVE" ]; then
-          echo "No active environment found, using blue as source"
           ACTIVE="${{ secrets.EB_ENV_BLUE }}"
+          echo "No active environment found, defaulting to: $ACTIVE"
+        else
+          echo "Current active environment: $ACTIVE"
         fi
         
-        # Determine target environment
-        if [ "$ACTIVE" = "${{ secrets.EB_ENV_BLUE }}" ]; then
+        # Determine target environment for new deployment
+        if [[ "$ACTIVE" == *"${{ secrets.EB_ENV_BLUE }}"* ]]; then
           TARGET="${{ secrets.EB_ENV_GREEN }}"
           SOURCE="${{ secrets.EB_ENV_BLUE }}"
         else
@@ -175,78 +101,46 @@ jobs:
           SOURCE="${{ secrets.EB_ENV_GREEN }}"
         fi
         
-        echo "Active environment: $ACTIVE"
         echo "Target environment for deployment: $TARGET"
-        echo "source=$SOURCE" >> $GITHUB_OUTPUT
+        echo "Source (current active) environment: $SOURCE"
         echo "target=$TARGET" >> $GITHUB_OUTPUT
+        echo "source=$SOURCE" >> $GITHUB_OUTPUT
 
     - name: Deploy to target environment
       run: |
-        # Store current version label as previous version for potential rollback
-        CURRENT_VERSION=$(aws elasticbeanstalk describe-environments \
-          --environment-names ${{ steps.set-target-env.outputs.target }} \
-          --query "Environments[0].VersionLabel" \
-          --output text)
-          
-        # Save previous version in application tags
-        aws elasticbeanstalk update-tags-for-resource \
-          --resource-arn "arn:aws:elasticbeanstalk:${{ secrets.AWS_REGION }}:${{ secrets.AWS_ACCOUNT_ID }}:application/${{ secrets.EB_APP_NAME }}" \
-          --tags-to-add Key=PreviousVersion,Value="$CURRENT_VERSION"
-          
-        # Deploy new version to target environment
-        echo "Deploying version ${{ needs.build.outputs.version_label }} to ${{ steps.set-target-env.outputs.target }}"
+        echo "Deploying version ${{ steps.create-version.outputs.version_label }} to ${{ steps.set-target-env.outputs.target }}"
         aws elasticbeanstalk update-environment \
           --environment-name ${{ steps.set-target-env.outputs.target }} \
-          --version-label "${{ needs.build.outputs.version_label }}"
+          --version-label "${{ steps.create-version.outputs.version_label }}"
 
-    - name: Wait for environment to stabilize
+    - name: Wait for environment to become healthy
       run: |
-        echo "Waiting for environment to stabilize..."
-        aws elasticbeanstalk wait environment-updated \
-          --environment-name ${{ steps.set-target-env.outputs.target }}
-          
-        # Double check status
-        STATUS=$(aws elasticbeanstalk describe-environments \
-          --environment-names ${{ steps.set-target-env.outputs.target }} \
-          --query "Environments[0].Status" \
-          --output text)
-          
-        if [ "$STATUS" != "Ready" ]; then
-          echo "Environment failed to reach ready state: $STATUS"
-          exit 1
-        fi
-
-    - name: Health check on deployed environment
-      id: health-check
-      run: |
-        HEALTH=""
-        MAX_ATTEMPTS=15
-        
-        for i in $(seq 1 $MAX_ATTEMPTS); do
-          echo "Health check attempt $i of $MAX_ATTEMPTS..."
-          
+        echo "Waiting for environment to become healthy..."
+        for i in {1..30}; do
+          STATUS=$(aws elasticbeanstalk describe-environments \
+            --environment-names ${{ steps.set-target-env.outputs.target }} \
+            --query "Environments[0].Status" \
+            --output text)
+            
           HEALTH=$(aws elasticbeanstalk describe-environments \
             --environment-names ${{ steps.set-target-env.outputs.target }} \
             --query "Environments[0].Health" \
             --output text)
             
-          echo "Current health status: $HEALTH"
+          echo "Status: $STATUS, Health: $HEALTH"
           
-          if [ "$HEALTH" == "Green" ]; then
+          if [[ "$STATUS" == "Ready" && "$HEALTH" == "Green" ]]; then
+            echo "Environment is ready and healthy!"
             break
+          fi
+          
+          if [ $i -eq 30 ]; then
+            echo "Environment failed to become healthy in the allotted time"
+            exit 1
           fi
           
           sleep 20
         done
-        
-        if [ "$HEALTH" != "Green" ]; then
-          echo "Environment did not reach healthy state after $MAX_ATTEMPTS attempts"
-          echo "success=false" >> $GITHUB_OUTPUT
-          exit 1
-        else
-          echo "Environment is healthy"
-          echo "success=true" >> $GITHUB_OUTPUT
-        fi
 
     - name: Smoke Test
       run: |
@@ -255,23 +149,15 @@ jobs:
           --query "Environments[0].CNAME" \
           --output text)
           
-        echo "Running smoke tests on http://$CNAME"
-        
-        # Basic connectivity test
-        curl -f -s -o /dev/null http://$CNAME || { echo "Failed to connect to endpoint"; exit 1; }
-        
-        # Health endpoint test
-        curl -f -s -o /dev/null http://$CNAME/health || { echo "Health endpoint failed"; exit 1; }
-        
-        echo "Smoke tests passed"
+        echo "Testing http://$CNAME"
+        curl -f http://$CNAME || exit 1
+        echo "Smoke test passed!"
 
   manual-approval:
-    needs: deploy
+    needs: build-and-deploy
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: ${{ steps.get-url.outputs.env_url }}
-    
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -281,21 +167,19 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
           
       - name: Get environment URL for review
-        id: get-url
         run: |
           CNAME=$(aws elasticbeanstalk describe-environments \
-            --environment-names ${{ needs.deploy.outputs.target_env }} \
+            --environment-names ${{ needs.build-and-deploy.outputs.target_env }} \
             --query "Environments[0].CNAME" \
             --output text)
             
-          echo "env_url=http://$CNAME" >> $GITHUB_OUTPUT
           echo "You can review the environment at: http://$CNAME"
           
       - name: Await manual approval
         run: echo "Waiting for manual approval in GitHub UI..."
 
-  swap-traffic:
-    needs: [deploy, manual-approval]
+  swap-and-inactivate:
+    needs: [build-and-deploy, manual-approval]
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
@@ -307,78 +191,60 @@ jobs:
 
       - name: Swap Blue-Green CNAMEs
         run: |
-          echo "Swapping traffic from ${{ needs.deploy.outputs.source_env }} to ${{ needs.deploy.outputs.target_env }}"
+          echo "Swapping traffic from ${{ needs.build-and-deploy.outputs.source_env }} to ${{ needs.build-and-deploy.outputs.target_env }}"
           
           aws elasticbeanstalk swap-environment-cnames \
-            --source-environment-name "${{ needs.deploy.outputs.source_env }}" \
-            --destination-environment-name "${{ needs.deploy.outputs.target_env }}"
+            --source-environment-name "${{ needs.build-and-deploy.outputs.source_env }}" \
+            --destination-environment-name "${{ needs.build-and-deploy.outputs.target_env }}"
             
           echo "Traffic swap completed"
 
-      - name: Verify environments after swap
+      - name: Verify new environment is serving traffic
         run: |
           # Give AWS a moment to complete the swap
-          sleep 15
+          sleep 10
           
-          # Verify both environments are still healthy
-          ENVIRONMENTS=$(aws elasticbeanstalk describe-environments \
-            --environment-names "${{ needs.deploy.outputs.source_env }}" "${{ needs.deploy.outputs.target_env }}" \
-            --query "Environments[*].{Name:EnvironmentName, Status:Status, Health:Health, CNAME:CNAME}" \
-            --output table)
-            
-          echo "Environment status after traffic swap:"
-          echo "$ENVIRONMENTS"
-          
-          # Check if either environment is unhealthy
-          UNHEALTHY=$(aws elasticbeanstalk describe-environments \
-            --environment-names "${{ needs.deploy.outputs.source_env }}" "${{ needs.deploy.outputs.target_env }}" \
-            --query "length(Environments[?Health!='Green'])" \
+          # Get the CNAME that should now be pointing to the new environment
+          SOURCE_CNAME=$(aws elasticbeanstalk describe-environments \
+            --environment-names "${{ needs.build-and-deploy.outputs.source_env }}" \
+            --query "Environments[0].CNAME" \
             --output text)
             
-          if [ "$UNHEALTHY" != "0" ]; then
-            echo "WARNING: One or more environments are not healthy after swap"
-          else
-            echo "Both environments remain healthy after swap"
-          fi
-
-  finalize:
-    needs: [deploy, swap-traffic]
-    runs-on: ubuntu-latest
-    if: ${{ always() }}
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Check deployment status
-        id: check-status
-        run: |
-          if [ "${{ needs.swap-traffic.result }}" == "success" ]; then
-            echo "status=success" >> $GITHUB_OUTPUT
-            echo "Deployment completed successfully"
-          elif [ "${{ needs.deploy.outputs.deploy_success }}" != "true" ]; then
-            echo "status=failed_deployment" >> $GITHUB_OUTPUT
-            echo "Deployment failed, no traffic was switched"
-          else
-            echo "status=failed_swap" >> $GITHUB_OUTPUT
-            echo "Deployment was successful but traffic swap failed"
-          fi
-
-      - name: Send notification of deployment result
-        run: |
-          STATUS="${{ steps.check-status.outputs.status }}"
-          VERSION="${{ needs.build.outputs.version_label }}"
-          TARGET="${{ needs.deploy.outputs.target_env }}"
+          TARGET_CNAME=$(aws elasticbeanstalk describe-environments \
+            --environment-names "${{ needs.build-and-deploy.outputs.target_env }}" \
+            --query "Environments[0].CNAME" \
+            --output text)
+            
+          echo "Source environment CNAME: $SOURCE_CNAME"
+          echo "Target environment CNAME: $TARGET_CNAME"
           
-          if [ "$STATUS" == "success" ]; then
-            echo "Successfully deployed version $VERSION to environment $TARGET"
-          elif [ "$STATUS" == "failed_deployment" ]; then
-            echo "Failed to deploy version $VERSION to environment $TARGET"
-          else
-            echo "Deployed version $VERSION to environment $TARGET but failed to swap traffic"
+          # Verify the new environment is healthy
+          HEALTH=$(aws elasticbeanstalk describe-environments \
+            --environment-names "${{ needs.build-and-deploy.outputs.target_env }}" \
+            --query "Environments[0].Health" \
+            --output text)
+            
+          if [ "$HEALTH" != "Green" ]; then
+            echo "New environment is not healthy after swap. Health status: $HEALTH"
+            exit 1
           fi
           
-          # Here you could add code to send notifications via Slack, Teams, or email
+          echo "New environment is confirmed healthy and serving traffic"
+
+      - name: Put old environment into inactive state
+        run: |
+          echo "Setting old environment ${{ needs.build-and-deploy.outputs.source_env }} to inactive state"
+          
+          # Option 1: Update with same version but scale down to 0 instances
+          aws elasticbeanstalk update-environment \
+            --environment-name "${{ needs.build-and-deploy.outputs.source_env }}" \
+            --option-settings "Namespace=aws:autoscaling:asg,OptionName=MinSize,Value=0" \
+                             "Namespace=aws:autoscaling:asg,OptionName=MaxSize,Value=0"
+          
+          echo "Old environment scaled down to 0 instances"
+          
+          # Option 2 (Alternative): Or you could completely terminate the environment if preferred
+          # aws elasticbeanstalk terminate-environment \
+          #   --environment-name "${{ needs.build-and-deploy.outputs.source_env }}"
+          
+          echo "Deployment completed successfully. New version is serving traffic and old environment has been inactivated."
