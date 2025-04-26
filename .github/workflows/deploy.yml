@@ -28,6 +28,9 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
 
+    - name: Run tests
+      run: dotnet test --no-restore --verbosity normal
+
     - name: Build
       run: dotnet build --configuration Release --no-restore
 
@@ -55,6 +58,7 @@ jobs:
         aws elasticbeanstalk create-application-version \
           --application-name ${{ secrets.EB_APP_NAME }} \
           --version-label "ver-${{ github.run_id }}" \
+          --description "GitHub Actions Deploy - $GITHUB_SHA" \
           --source-bundle S3Bucket=${{ env.AWS_S3_BUCKET }},S3Key=app-${{ github.run_id }}.zip
 
     - name: Determine inactive environment
@@ -82,7 +86,7 @@ jobs:
 
     - name: Wait for environment to become healthy
       run: |
-        for i in {1..30}; do
+        for i in {1..75}; do
           STATUS=$(aws elasticbeanstalk describe-environments \
             --environment-names ${{ steps.set-target-env.outputs.target }} \
             --query "Environments[0].Health" \
@@ -94,6 +98,11 @@ jobs:
           fi
           sleep 20
         done
+
+        if [ "$STATUS" != "Green" ]; then
+          echo "Environment did not become healthy in time"
+          exit 1
+        fi
 
     - name: Smoke Test
       run: |
@@ -108,7 +117,7 @@ jobs:
     needs: build-and-deploy
     runs-on: ubuntu-latest
     environment:
-      name: production
+      name: production  # Define this in GitHub UI under Environments
     steps:
       - name: Await manual approval
         run: echo "Waiting for manual approval in GitHub UI..."
