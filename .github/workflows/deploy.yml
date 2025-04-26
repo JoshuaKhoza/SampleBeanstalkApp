@@ -94,17 +94,19 @@ jobs:
         
         # Determine target environment for new deployment
         if [[ "$ACTIVE" == *"${{ secrets.EB_ENV_BLUE }}"* ]]; then
-          TARGET="${{ secrets.EB_ENV_GREEN }}"
-          SOURCE="${{ secrets.EB_ENV_BLUE }}"
+          TARGET_ENV="${{ secrets.EB_ENV_GREEN }}"
+          SOURCE_ENV="${{ secrets.EB_ENV_BLUE }}"
         else
-          TARGET="${{ secrets.EB_ENV_BLUE }}"
-          SOURCE="${{ secrets.EB_ENV_GREEN }}"
+          TARGET_ENV="${{ secrets.EB_ENV_BLUE }}"
+          SOURCE_ENV="${{ secrets.EB_ENV_GREEN }}"
         fi
         
-        echo "Target environment for deployment: $TARGET"
-        echo "Source (current active) environment: $SOURCE"
-        echo "target=$TARGET" >> $GITHUB_OUTPUT
-        echo "source=$SOURCE" >> $GITHUB_OUTPUT
+        echo "Target environment for deployment: $TARGET_ENV"
+        echo "Source (current active) environment: $SOURCE_ENV"
+        
+        # Make sure to output these variables properly
+        echo "target=$TARGET_ENV" >> $GITHUB_OUTPUT
+        echo "source=$SOURCE_ENV" >> $GITHUB_OUTPUT
 
     - name: Deploy to target environment
       run: |
@@ -153,8 +155,18 @@ jobs:
         curl -f http://$CNAME || exit 1
         echo "Smoke test passed!"
 
-  manual-approval:
+  debug-outputs:
     needs: build-and-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print Job Outputs
+        run: |
+          echo "Source Env: ${{ needs.build-and-deploy.outputs.source_env }}"
+          echo "Target Env: ${{ needs.build-and-deploy.outputs.target_env }}"
+          echo "Version Label: ${{ needs.build-and-deploy.outputs.version_label }}"
+
+  manual-approval:
+    needs: [build-and-deploy, debug-outputs]
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -189,62 +201,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Swap Blue-Green CNAMEs
+      - name: Debug environment variables
         run: |
-          echo "Swapping traffic from ${{ needs.build-and-deploy.outputs.source_env }} to ${{ needs.build-and-deploy.outputs.target_env }}"
-          
-          aws elasticbeanstalk swap-environment-cnames \
-            --source-environment-name "${{ needs.build-and-deploy.outputs.source_env }}" \
-            --destination-environment-name "${{ needs.build-and-deploy.outputs.target_env }}"
-            
-          echo "Traffic swap completed"
-
-      - name: Verify new environment is serving traffic
-        run: |
-          # Give AWS a moment to complete the swap
-          sleep 10
-          
-          # Get the CNAME that should now be pointing to the new environment
-          SOURCE_CNAME=$(aws elasticbeanstalk describe-environments \
-            --environment-names "${{ needs.build-and-deploy.outputs.source_env }}" \
-            --query "Environments[0].CNAME" \
-            --output text)
-            
-          TARGET_CNAME=$(aws elasticbeanstalk describe-environments \
-            --environment-names "${{ needs.build-and-deploy.outputs.target_env }}" \
-            --query "Environments[0].CNAME" \
-            --output text)
-            
-          echo "Source environment CNAME: $SOURCE_CNAME"
-          echo "Target environment CNAME: $TARGET_CNAME"
-          
-          # Verify the new environment is healthy
-          HEALTH=$(aws elasticbeanstalk describe-environments \
-            --environment-names "${{ needs.build-and-deploy.outputs.target_env }}" \
-            --query "Environments[0].Health" \
-            --output text)
-            
-          if [ "$HEALTH" != "Green" ]; then
-            echo "New environment is not healthy after swap. Health status: $HEALTH"
-            exit 1
-          fi
-          
-          echo "New environment is confirmed healthy and serving traffic"
-
-      - name: Put old environment into inactive state
-        run: |
-          echo "Setting old environment ${{ needs.build-and-deploy.outputs.source_env }} to inactive state"
-          
-          # Option 1: Update with same version but scale down to 0 instances
-          aws elasticbeanstalk update-environment \
-            --environment-name "${{ needs.build-and-deploy.outputs.source_env }}" \
-            --option-settings "Namespace=aws:autoscaling:asg,OptionName=MinSize,Value=0" \
-                             "Namespace=aws:autoscaling:asg,OptionName=MaxSize,Value=0"
-          
-          echo "Old environment scaled down to 0 instances"
-          
-          # Option 2 (Alternative): Or you could completely terminate the environment if preferred
-          # aws elasticbeanstalk terminate-environment \
-          #   --environment-name "${{ needs.build-and-deploy.outputs.source_env }}"
-          
-          echo "Deployment completed successfully. New version is serving traffic and old environment has been inactivated."
+          echo "Source env: ${{ needs.build-and-deploy.outputs.source_env }}"
+          echo "Target env: ${{ needs.build-and-deploy.outputs.target_env }}"
