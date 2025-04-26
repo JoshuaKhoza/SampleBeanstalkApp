@@ -109,31 +109,28 @@ jobs:
       - name: Await manual approval
         run: echo "Waiting for manual approval in GitHub UI..."
 
-  swap-cnames:
-    needs: manual-approval
-    runs-on: ubuntu-latest
-    steps:
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
-
-    - name: Determine active and inactive environments
-      id: swap
-      run: |
-        INACTIVE=${{ needs.build-and-deploy.outputs.inactive_env }}
-        if [ "$INACTIVE" == "${{ secrets.EB_ENV_BLUE }}" ]; then
-          ACTIVE=${{ secrets.EB_ENV_GREEN }}
-        else
-          ACTIVE=${{ secrets.EB_ENV_BLUE }}
-        fi
-        echo "active=$ACTIVE" >> $GITHUB_OUTPUT
-        echo "inactive=$INACTIVE" >> $GITHUB_OUTPUT
-
-    - name: Swap CNAMEs
-      run: |
-        aws elasticbeanstalk swap-environment-cnames \
-          --source-environment-name "${{ steps.swap.outputs.active }}" \
-          --destination-environment-name "${{ steps.swap.outputs.inactive }}"
+        swap-cnames:
+          needs: manual-approval
+          runs-on: ubuntu-latest
+          steps:
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v2
+              with:
+                aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                aws-region: ${{ secrets.AWS_REGION }}
+      
+            - name: Swap Blue-Green Environments
+              run: |
+                TARGET=${{ needs.build-and-deploy.outputs.inactive_env_target }}
+                if [ "$TARGET" = "${{ secrets.EB_ENV_BLUE }}" ]; then
+                  SOURCE=${{ secrets.EB_ENV_BLUE }}
+                  DEST=${{ secrets.EB_ENV_GREEN }}
+                else
+                  SOURCE=${{ secrets.EB_ENV_GREEN }}
+                  DEST=${{ secrets.EB_ENV_BLUE }}
+                fi
+                echo "Swapping CNAMEs: $SOURCE → $DEST"
+                aws elasticbeanstalk swap-environment-cnames \
+                  --source-environment-name "$SOURCE" \
+                  --destination-environment-name "$DEST"
