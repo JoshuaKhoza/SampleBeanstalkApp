@@ -9,14 +9,13 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
+    outputs:
+      inactive_env: ${{ steps.inactive_env.outputs.target }}
+
     env:
       DOTNET_VERSION: '9.0'
       AWS_REGION: ${{ secrets.AWS_REGION }}
       AWS_S3_BUCKET: ${{ secrets.S3_BUCKET }}
-
-    outputs:
-      inactive_env_target: ${{ steps.inactive_env.outputs.target }}
-      active_env_before_swap: ${{ steps.inactive_env.outputs.active }}
 
     steps:
     - name: Checkout code
@@ -52,35 +51,6 @@ jobs:
       run: |
         aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ github.run_id }}.zip
 
-    - name: Ensure inactive environment exists
-      id: check_inactive
-      run: |
-        ENV_LIST=$(aws elasticbeanstalk describe-environments \
-          --application-name ${{ secrets.EB_APP_NAME }} \
-          --query "Environments[].EnvironmentName" \
-          --output text)
-
-        if [[ "$ENV_LIST" == *"${{ secrets.EB_ENV_BLUE }}"* && "$ENV_LIST" == *"${{ secrets.EB_ENV_GREEN }}"* ]]; then
-          echo "has_both=true" >> $GITHUB_OUTPUT
-        else
-          ACTIVE_ENV=$(echo $ENV_LIST)
-          if [[ "$ACTIVE_ENV" == "${{ secrets.EB_ENV_BLUE }}" ]]; then
-            TARGET_ENV="${{ secrets.EB_ENV_GREEN }}"
-          else
-            TARGET_ENV="${{ secrets.EB_ENV_BLUE }}"
-          fi
-
-          aws elasticbeanstalk create-environment \
-            --application-name ${{ secrets.EB_APP_NAME }} \
-            --environment-name "$TARGET_ENV" \
-            --version-label "ver-${{ github.run_id }}" \
-            --solution-stack-name "64bit Amazon Linux 2023 v3.4.1 running .NET 9" \
-            --option-settings file://.ebextensions/options.json
-
-          echo "has_both=false" >> $GITHUB_OUTPUT
-          echo "target=$TARGET_ENV" >> $GITHUB_OUTPUT
-        fi
-
     - name: Create new app version
       run: |
         aws elasticbeanstalk create-application-version \
@@ -88,9 +58,8 @@ jobs:
           --version-label "ver-${{ github.run_id }}" \
           --source-bundle S3Bucket=${{ env.AWS_S3_BUCKET }},S3Key=app-${{ github.run_id }}.zip
 
-    - name: Determine deployment target
+    - name: Determine inactive environment
       id: inactive_env
-      if: steps.check_inactive.outputs.has_both == 'true'
       run: |
         ACTIVE_ENV=$(aws elasticbeanstalk describe-environments \
           --application-name ${{ secrets.EB_APP_NAME }} \
@@ -99,27 +68,22 @@ jobs:
 
         if [ "$ACTIVE_ENV" == "${{ secrets.EB_ENV_BLUE }}" ]; then
           echo "target=${{ secrets.EB_ENV_GREEN }}" >> $GITHUB_OUTPUT
-          echo "active=${{ secrets.EB_ENV_BLUE }}" >> $GITHUB_OUTPUT
         else
           echo "target=${{ secrets.EB_ENV_BLUE }}" >> $GITHUB_OUTPUT
-          echo "active=${{ secrets.EB_ENV_GREEN }}" >> $GITHUB_OUTPUT
         fi
 
     - name: Deploy to inactive environment
-      if: steps.check_inactive.outputs.has_both == 'true'
       run: |
         aws elasticbeanstalk update-environment \
           --environment-name ${{ steps.inactive_env.outputs.target }} \
           --version-label "ver-${{ github.run_id }}"
 
-    - name: Wait for environment to become healthy
-      if: steps.check_inactive.outputs.has_both == 'true'
+    - name: Wait for environment to be healthy
       run: |
         for i in {1..30}; do
           STATUS=$(aws elasticbeanstalk describe-environments \
             --environment-names ${{ steps.inactive_env.outputs.target }} \
-            --query "Environments[0].Health" \
-            --output text)
+            --query "Environments[0].Health" --output text)
           echo "Health: $STATUS"
           if [ "$STATUS" == "Green" ]; then
             break
@@ -128,12 +92,10 @@ jobs:
         done
 
     - name: Smoke Test
-      if: steps.check_inactive.outputs.has_both == 'true'
       run: |
         ENV_URL=$(aws elasticbeanstalk describe-environments \
           --environment-names ${{ steps.inactive_env.outputs.target }} \
-          --query "Environments[0].CNAME" \
-          --output text)
+          --query "Environments[0].CNAME" --output text)
         echo "Testing http://$ENV_URL"
         curl -f http://$ENV_URL || exit 1
 
@@ -142,35 +104,40 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
+      url: http://placeholder
     steps:
-      - name: Await manual approval
-        run: echo "Waiting for manual approval..."
+      - name: Wait for manual approval
+        run: echo "Approve to swap environments"
 
   swap-cnames:
     needs: [build-and-deploy, manual-approval]
     runs-on: ubuntu-latest
+
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Swap Blue-Green Environments
-        run: |
-          SOURCE=${{ needs.build-and-deploy.outputs.active_env_before_swap }}
-          DEST=${{ needs.build-and-deploy.outputs.inactive_env_target }}
+    - name: Get current active environment
+      id: active_env
+      run: |
+        ACTIVE=$(aws elasticbeanstalk describe-environments \
+          --application-name ${{ secrets.EB_APP_NAME }} \
+          --query "Environments[?Status=='Ready' && Health=='Green'].EnvironmentName" \
+          --output text)
+        echo "active=$ACTIVE" >> $GITHUB_OUTPUT
 
-          echo "Swapping CNAMEs: $SOURCE → $DEST"
-          aws elasticbeanstalk swap-environment-cnames \
-            --source-environment-name "$SOURCE" \
-            --destination-environment-name "$DEST"
+    - name: Swap CNAMEs
+      run: |
+        aws elasticbeanstalk swap-environment-cnames \
+          --source-environment-name "${{ steps.active_env.outputs.active }}" \
+          --destination-environment-name "${{ needs.build-and-deploy.outputs.inactive_env }}"
 
-      - name: Terminate old environment
-        run: |
-          OLD_ENV=${{ needs.build-and-deploy.outputs.active_env_before_swap }}
-          echo "Terminating previous environment: $OLD_ENV"
-          aws elasticbeanstalk terminate-environment \
-            --environment-name "$OLD_ENV" \
-            --terminate-resources
+    - name: Tag previous environment as inactive
+      run: |
+        aws elasticbeanstalk update-tags-for-resource \
+          --resource-arn arn:aws:elasticbeanstalk:${{ secrets.AWS_REGION }}:${{ secrets.AWS_ACCOUNT_ID }}:environment/${{ secrets.EB_APP_NAME }}/${{ steps.active_env.outputs.active }} \
+          --tags Key=Status,Value=Inactive
