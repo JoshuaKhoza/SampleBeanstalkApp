@@ -30,10 +30,12 @@ jobs:
       run: dotnet build --configuration Release --no-restore
 
     - name: Publish
-      run: dotnet publish -c Release -o publish_output
+      run: dotnet publish -c Release -r linux-x64 --self-contained true -o publish_output
 
     - name: Zip publish output
-      run: zip -r app.zip publish_output/*
+      run: |
+        cd publish_output
+        zip -r ../app.zip .
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
