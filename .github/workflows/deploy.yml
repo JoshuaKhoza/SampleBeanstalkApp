@@ -1,4 +1,4 @@
-name: Deploy .NET App to Elastic Beanstalk
+name: Deploy .NET App to Elastic Beanstalk (Blue-Green)
 
 on:
   push:
@@ -63,15 +63,12 @@ jobs:
           echo "has_both=true" >> $GITHUB_OUTPUT
         else
           echo "Creating inactive environment..."
-
           ACTIVE_ENV=$(echo $ENV_LIST)
           if [[ "$ACTIVE_ENV" == "${{ secrets.EB_ENV_BLUE }}" ]]; then
             TARGET_ENV="${{ secrets.EB_ENV_GREEN }}"
           else
             TARGET_ENV="${{ secrets.EB_ENV_BLUE }}"
           fi
-
-          echo "Creating $TARGET_ENV..."
 
           aws elasticbeanstalk create-environment \
             --application-name ${{ secrets.EB_APP_NAME }} \
@@ -91,7 +88,7 @@ jobs:
           --version-label "ver-${{ github.run_id }}" \
           --source-bundle S3Bucket=${{ env.AWS_S3_BUCKET }},S3Key=app-${{ github.run_id }}.zip
 
-    - name: Determine deployment target
+    - name: Determine inactive environment
       id: inactive_env
       if: steps.check_inactive.outputs.has_both == 'true'
       run: |
@@ -139,6 +136,14 @@ jobs:
         echo "Testing http://$ENV_URL"
         curl -f http://$ENV_URL || exit 1
 
+    - name: Request Manual Approval Before Swap
+      if: steps.check_inactive.outputs.has_both == 'true'
+      environment:
+        name: production
+        url: http://${{ steps.inactive_env.outputs.target }}.elasticbeanstalk.com
+        wait_timer: 0
+      run: echo "Awaiting manual approval before swapping CNAMEs."
+
     - name: Swap Blue-Green Environments
       if: steps.check_inactive.outputs.has_both == 'true'
       run: |
@@ -155,3 +160,4 @@ jobs:
         aws elasticbeanstalk swap-environment-cnames \
           --source-environment-name $SOURCE_ENV \
           --destination-environment-name $DEST_ENV
+
