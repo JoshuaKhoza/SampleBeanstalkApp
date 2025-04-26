@@ -14,6 +14,10 @@ jobs:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       AWS_S3_BUCKET: ${{ secrets.S3_BUCKET }}
 
+    outputs:
+      inactive_env_target: ${{ steps.inactive_env.outputs.target }}
+      active_env_before_swap: ${{ steps.inactive_env.outputs.active }}
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -56,14 +60,9 @@ jobs:
           --query "Environments[].EnvironmentName" \
           --output text)
 
-        echo "Environments found: $ENV_LIST"
-
         if [[ "$ENV_LIST" == *"${{ secrets.EB_ENV_BLUE }}"* && "$ENV_LIST" == *"${{ secrets.EB_ENV_GREEN }}"* ]]; then
-          echo "Both environments exist."
           echo "has_both=true" >> $GITHUB_OUTPUT
         else
-          echo "Creating inactive environment..."
-
           ACTIVE_ENV=$(echo $ENV_LIST)
           if [[ "$ACTIVE_ENV" == "${{ secrets.EB_ENV_BLUE }}" ]]; then
             TARGET_ENV="${{ secrets.EB_ENV_GREEN }}"
@@ -71,14 +70,12 @@ jobs:
             TARGET_ENV="${{ secrets.EB_ENV_BLUE }}"
           fi
 
-          echo "Creating $TARGET_ENV..."
-
           aws elasticbeanstalk create-environment \
             --application-name ${{ secrets.EB_APP_NAME }} \
             --environment-name "$TARGET_ENV" \
             --version-label "ver-${{ github.run_id }}" \
             --solution-stack-name "64bit Amazon Linux 2023 v3.4.1 running .NET 9" \
-            --option-settings file://.ebextensions/options.json || exit 1
+            --option-settings file://.ebextensions/options.json
 
           echo "has_both=false" >> $GITHUB_OUTPUT
           echo "target=$TARGET_ENV" >> $GITHUB_OUTPUT
@@ -102,8 +99,10 @@ jobs:
 
         if [ "$ACTIVE_ENV" == "${{ secrets.EB_ENV_BLUE }}" ]; then
           echo "target=${{ secrets.EB_ENV_GREEN }}" >> $GITHUB_OUTPUT
+          echo "active=${{ secrets.EB_ENV_BLUE }}" >> $GITHUB_OUTPUT
         else
           echo "target=${{ secrets.EB_ENV_BLUE }}" >> $GITHUB_OUTPUT
+          echo "active=${{ secrets.EB_ENV_GREEN }}" >> $GITHUB_OUTPUT
         fi
 
     - name: Deploy to inactive environment
@@ -116,7 +115,6 @@ jobs:
     - name: Wait for environment to become healthy
       if: steps.check_inactive.outputs.has_both == 'true'
       run: |
-        echo "Waiting for ${{ steps.inactive_env.outputs.target }} to be healthy..."
         for i in {1..30}; do
           STATUS=$(aws elasticbeanstalk describe-environments \
             --environment-names ${{ steps.inactive_env.outputs.target }} \
@@ -144,13 +142,12 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: http://placeholder-for-ui
     steps:
       - name: Await manual approval
-        run: echo "Waiting for manual approval in GitHub UI..."
+        run: echo "Waiting for manual approval..."
 
   swap-cnames:
-    needs: manual-approval
+    needs: [build-and-deploy, manual-approval]
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
@@ -162,16 +159,18 @@ jobs:
 
       - name: Swap Blue-Green Environments
         run: |
-          TARGET=${{ needs.build-and-deploy.outputs.inactive_env_target }}
-          if [ "$TARGET" = "${{ secrets.EB_ENV_BLUE }}" ]; then
-            SOURCE=${{ secrets.EB_ENV_BLUE }}
-            DEST=${{ secrets.EB_ENV_GREEN }}
-          else
-            SOURCE=${{ secrets.EB_ENV_GREEN }}
-            DEST=${{ secrets.EB_ENV_BLUE }}
-          fi
+          SOURCE=${{ needs.build-and-deploy.outputs.active_env_before_swap }}
+          DEST=${{ needs.build-and-deploy.outputs.inactive_env_target }}
 
           echo "Swapping CNAMEs: $SOURCE → $DEST"
           aws elasticbeanstalk swap-environment-cnames \
             --source-environment-name "$SOURCE" \
             --destination-environment-name "$DEST"
+
+      - name: Terminate old environment
+        run: |
+          OLD_ENV=${{ needs.build-and-deploy.outputs.active_env_before_swap }}
+          echo "Terminating previous environment: $OLD_ENV"
+          aws elasticbeanstalk terminate-environment \
+            --environment-name "$OLD_ENV" \
+            --terminate-resources
