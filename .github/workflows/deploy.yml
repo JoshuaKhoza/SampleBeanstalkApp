@@ -128,10 +128,14 @@ jobs:
         TARGET=${{ needs.build-and-deploy.outputs.inactive_env }}
         if [ "$TARGET" == "${{ secrets.EB_ENV_BLUE }}" ]; then
           SOURCE=${{ secrets.EB_ENV_GREEN }}
+          echo "SOURCE ${{ secrets.EB_ENV_GREEN }}"
           DEST=${{ secrets.EB_ENV_BLUE }}
+          echo "DEST ${{ secrets.EB_ENV_BLUE }}"
         else
           SOURCE=${{ secrets.EB_ENV_BLUE }}
+          echo "SOURCE ${{ secrets.EB_ENV_GREEN }}"
           DEST=${{ secrets.EB_ENV_GREEN }}
+          echo "DEST ${{ secrets.EB_ENV_BLUE }}"
         fi
 
         echo "Swapping $SOURCE -> $DEST"
