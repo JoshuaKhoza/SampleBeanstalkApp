@@ -142,6 +142,16 @@ jobs:
     - name: Swap Blue-Green Environments
       if: steps.check_inactive.outputs.has_both == 'true'
       run: |
+        TARGET_ENV=${{ steps.inactive_env.outputs.target }}
+        if [[ "$TARGET_ENV" == "${{ secrets.EB_ENV_BLUE }}" ]]; then
+          SOURCE_ENV="${{ secrets.EB_ENV_BLUE }}"
+          DEST_ENV="${{ secrets.EB_ENV_GREEN }}"
+        else
+          SOURCE_ENV="${{ secrets.EB_ENV_GREEN }}"
+          DEST_ENV="${{ secrets.EB_ENV_BLUE }}"
+        fi
+
+        echo "Swapping CNAMEs: $SOURCE_ENV -> $DEST_ENV"
         aws elasticbeanstalk swap-environment-cnames \
-          --source-environment-name ${{ steps.inactive_env.outputs.target }} \
-          --destination-environment-name ${{ steps.inactive_env.outputs.target == secrets.EB_ENV_BLUE && secrets.EB_ENV_GREEN || secrets.EB_ENV_BLUE }}
+          --source-environment-name $SOURCE_ENV \
+          --destination-environment-name $DEST_ENV
