@@ -1,4 +1,4 @@
-name: Deploy .NET App to Elastic Beanstalk (Blue-Green)
+name: Deploy .NET App to Elastic Beanstalk
 
 on:
   push:
@@ -13,6 +13,10 @@ jobs:
       DOTNET_VERSION: '9.0'
       AWS_REGION: ${{ secrets.AWS_REGION }}
       AWS_S3_BUCKET: ${{ secrets.S3_BUCKET }}
+
+    outputs:
+      has_both: ${{ steps.check_inactive.outputs.has_both }}
+      target: ${{ steps.inactive_env.outputs.target }}
 
     steps:
     - name: Checkout code
@@ -63,12 +67,15 @@ jobs:
           echo "has_both=true" >> $GITHUB_OUTPUT
         else
           echo "Creating inactive environment..."
+
           ACTIVE_ENV=$(echo $ENV_LIST)
           if [[ "$ACTIVE_ENV" == "${{ secrets.EB_ENV_BLUE }}" ]]; then
             TARGET_ENV="${{ secrets.EB_ENV_GREEN }}"
           else
             TARGET_ENV="${{ secrets.EB_ENV_BLUE }}"
           fi
+
+          echo "Creating $TARGET_ENV..."
 
           aws elasticbeanstalk create-environment \
             --application-name ${{ secrets.EB_APP_NAME }} \
@@ -88,7 +95,7 @@ jobs:
           --version-label "ver-${{ github.run_id }}" \
           --source-bundle S3Bucket=${{ env.AWS_S3_BUCKET }},S3Key=app-${{ github.run_id }}.zip
 
-    - name: Determine inactive environment
+    - name: Determine deployment target
       id: inactive_env
       if: steps.check_inactive.outputs.has_both == 'true'
       run: |
@@ -136,28 +143,31 @@ jobs:
         echo "Testing http://$ENV_URL"
         curl -f http://$ENV_URL || exit 1
 
-    - name: Request Manual Approval Before Swap
-      if: steps.check_inactive.outputs.has_both == 'true'
-      environment:
-        name: production
-        url: http://${{ steps.inactive_env.outputs.target }}.elasticbeanstalk.com
-        wait_timer: 0
-      run: echo "Awaiting manual approval before swapping CNAMEs."
+  manual-approval:
+    if: needs.build-and-deploy.outputs.has_both == 'true'
+    needs: build-and-deploy
+    environment:
+      name: production
+      url: http://${{ needs.build-and-deploy.outputs.target }}.elasticbeanstalk.com
+    runs-on: ubuntu-latest
+    steps:
+    - name: Awaiting Manual Approval
+      run: echo "Approve this deployment in the GitHub UI to continue."
+
+  swap-cnames:
+    if: needs.build-and-deploy.outputs.has_both == 'true'
+    needs: manual-approval
+    runs-on: ubuntu-latest
+    steps:
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
 
     - name: Swap Blue-Green Environments
-      if: steps.check_inactive.outputs.has_both == 'true'
       run: |
-        TARGET_ENV=${{ steps.inactive_env.outputs.target }}
-        if [[ "$TARGET_ENV" == "${{ secrets.EB_ENV_BLUE }}" ]]; then
-          SOURCE_ENV="${{ secrets.EB_ENV_BLUE }}"
-          DEST_ENV="${{ secrets.EB_ENV_GREEN }}"
-        else
-          SOURCE_ENV="${{ secrets.EB_ENV_GREEN }}"
-          DEST_ENV="${{ secrets.EB_ENV_BLUE }}"
-        fi
-
-        echo "Swapping CNAMEs: $SOURCE_ENV -> $DEST_ENV"
         aws elasticbeanstalk swap-environment-cnames \
-          --source-environment-name $SOURCE_ENV \
-          --destination-environment-name $DEST_ENV
-
+          --source-environment-name ${{ needs.build-and-deploy.outputs.target }} \
+          --destination-environment-name ${{ needs.build-and-deploy.outputs.target == secrets.EB_ENV_BLUE && secrets.EB_ENV_GREEN || secrets.EB_ENV_BLUE }}
