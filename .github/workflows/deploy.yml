@@ -5,14 +5,22 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      deploy_environment:
+        description: 'Select the environment to deploy to (blue or green)'
+        required: true
+        default: 'blue'
+        type: choice
+        options:
+          - blue
+          - green
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     outputs:
       version_label: ${{ steps.create_version.outputs.version_label }}
-      source_env: ${{ steps.determine-env.outputs.source_env }}
-      target_env: ${{ steps.determine-env.outputs.target_env }}
+      deploy_env: ${{ steps.determine-env.outputs.deploy_env }}
     env:
       DOTNET_VERSION: '9.0'
       AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -62,52 +70,24 @@ jobs:
       run: |
         aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ env.VERSION_LABEL }}.zip
 
-    - name: Determine active environment
+    - name: Determine the selected environment
       id: determine-env
       run: |
-        # Fetch the version labels deployed to both Blue and Green environments
-        BLUE_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
-          --application-name $APPLICATION_NAME \
-          --environment-names $DEV_ENV \
-          --query "Environments[0].VersionLabel" \
-          --output text)
-    
-        GREEN_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
-          --application-name $APPLICATION_NAME \
-          --environment-names $PROD_ENV \
-          --query "Environments[0].VersionLabel" \
-          --output text)
-    
-        echo "Blue Environment Version: $BLUE_VERSION_LABEL"
-        echo "Green Environment Version: $GREEN_VERSION_LABEL"
-    
-        # If either environment has no version or is inactive, it needs to be updated with the new version
-        if [ "$BLUE_VERSION_LABEL" == "None" ] || [ -z "$BLUE_VERSION_LABEL" ]; then
-          echo "Blue environment has no version or is inactive, deploying to Blue."
-          echo "source_env=${PROD_ENV}" >> $GITHUB_OUTPUT
-          echo "target_env=${DEV_ENV}" >> $GITHUB_OUTPUT
-        elif [ "$GREEN_VERSION_LABEL" == "None" ] || [ -z "$GREEN_VERSION_LABEL" ]; then
-          echo "Green environment has no version or is inactive, deploying to Green."
-          echo "source_env=${DEV_ENV}" >> $GITHUB_OUTPUT
-          echo "target_env=${PROD_ENV}" >> $GITHUB_OUTPUT
-        # If the Blue environment has a newer version, deploy to Green (older or missing version)
-        elif [ "$BLUE_VERSION_LABEL" > "$GREEN_VERSION_LABEL" ]; then
-          echo "Blue environment has a newer version, deploying to Green."
-          echo "source_env=${DEV_ENV}" >> $GITHUB_OUTPUT
-          echo "target_env=${PROD_ENV}" >> $GITHUB_OUTPUT
-        # If the Green environment has a newer version, deploy to Blue (older or missing version)
-        elif [ "$BLUE_VERSION_LABEL" < "$GREEN_VERSION_LABEL" ]; then
-          echo "Green environment has a newer version, deploying to Blue."
-          echo "source_env=${PROD_ENV}" >> $GITHUB_OUTPUT
-          echo "target_env=${DEV_ENV}" >> $GITHUB_OUTPUT
+        DEPLOY_ENV=${{ github.event.inputs.deploy_environment }}
+        echo "Deploying to the $DEPLOY_ENV environment."
+
+        if [ "$DEPLOY_ENV" == "blue" ]; then
+          echo "Deploying to Blue environment."
+          echo "deploy_env=${DEV_ENV}" >> $GITHUB_OUTPUT
+        elif [ "$DEPLOY_ENV" == "green" ]; then
+          echo "Deploying to Green environment."
+          echo "deploy_env=${PROD_ENV}" >> $GITHUB_OUTPUT
         else
-          # If both environments have the same version, assume Green is live and deploy to Blue
-          echo "Both environments have the same version, deploying to Blue."
-          echo "source_env=${PROD_ENV}" >> $GITHUB_OUTPUT
-          echo "target_env=${DEV_ENV}" >> $GITHUB_OUTPUT
+          echo "Invalid environment selected!"
+          exit 1
         fi
-      
-    - name: Deploy to target environment
+
+    - name: Deploy to selected environment
       run: |
         aws elasticbeanstalk create-application-version \
           --application-name $APPLICATION_NAME \
@@ -116,25 +96,25 @@ jobs:
 
         aws elasticbeanstalk update-environment \
           --application-name $APPLICATION_NAME \
-          --environment-name ${{ steps.determine-env.outputs.target_env }} \
+          --environment-name ${{ steps.determine-env.outputs.deploy_env }} \
           --version-label ${{ steps.create_version.outputs.version_label }}
 
-    - name: Wait for both environments to be healthy
+    - name: Wait for the environment to be healthy
       run: |
-        aws elasticbeanstalk wait environment-updated \
-          --environment-name ${{ steps.determine-env.outputs.target_env }}
-        aws elasticbeanstalk wait environment-updated \
-          --environment-name ${{ steps.determine-env.outputs.source_env }}
+        aws elasticbeanstalk wait environment-health \
+          --environment-name ${{ steps.determine-env.outputs.deploy_env }} \
+          --health 'Green'
+        echo "The environment is healthy!"
 
   wait-for-approval:
     needs: build-and-deploy
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://${{ needs.build-and-deploy.outputs.target_env }}.eba-hvepxiqp.us-east-1.elasticbeanstalk.com
+      url: https://${{ needs.build-and-deploy.outputs.deploy_env }}.eba-hvepxiqp.us-east-1.elasticbeanstalk.com
     steps:
     - name: Wait for manual approval
-      run: echo "Please approve the deployment to swap environments."
+      run: echo "Please approve the deployment."
 
   swap-cnames:
     needs: wait-for-approval
@@ -195,5 +175,5 @@ jobs:
           --environment-names $TARGET_ENV \
           --query "Environments[0].CNAME" \
           --output text)
-      
-      
+        
+        echo "Live environment CNAME: $ENV_CNAME"
