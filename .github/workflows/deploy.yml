@@ -119,6 +119,8 @@ jobs:
 
     - name: Swap CNAMEs
       run: |
+        echo "Swapping CNAMEs between ${needs.build-and-deploy.outputs.source_env} and ${needs.build-and-deploy.outputs.target_env}..."
         aws elasticbeanstalk swap-environment-cnames \
           --source-environment-name ${{ needs.build-and-deploy.outputs.source_env }} \
           --destination-environment-name ${{ needs.build-and-deploy.outputs.target_env }}
+
