@@ -1,15 +1,15 @@
 name: Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)
 
 on:
-  push:
-    branches:
-      - main
+  # push:
+  #   branches:
+  #     - main
   workflow_dispatch:
     inputs:
       deploy_environment:
         description: 'Select the environment to deploy to (blue or green)'
         required: true
-        default: 'blue'
+        #default: 'blue'
         type: choice
         options:
           - blue
