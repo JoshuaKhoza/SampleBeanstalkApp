@@ -74,6 +74,7 @@ jobs:
           echo "target_env=${PROD_ENV}" >> $GITHUB_OUTPUT
         fi
 
+
     - name: Deploy to target environment
       run: |
         aws elasticbeanstalk create-application-version \
