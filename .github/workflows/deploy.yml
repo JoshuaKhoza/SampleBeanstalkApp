@@ -136,3 +136,38 @@ jobs:
         aws elasticbeanstalk swap-environment-cnames \
           --source-environment-name "$SOURCE" \
           --destination-environment-name "$DEST"
+
+    - name: Update DNS to point to live environment
+      run: |
+        # Determine the active (live) environment
+        ACTIVE_ENV=${{ needs.build-and-deploy.outputs.target_env }}
+        
+        # Fetch the CNAME of the live environment
+        ENV_CNAME=$(aws elasticbeanstalk describe-environments \
+          --application-name $APPLICATION_NAME \
+          --environment-names $ACTIVE_ENV \
+          --query "Environments[0].CNAME" \
+          --output text)
+
+        # Update Route 53 DNS record for www.khomzeetek.click to point to the live environment's CNAME
+        aws route53 change-resource-record-sets \
+          --hosted-zone-id ${{ secrets.ROUTE_53_HOSTED_ZONE_ID }} \
+          --change-batch '{
+            "Changes": [
+              {
+                "Action": "UPSERT",
+                "ResourceRecordSet": {
+                  "Name": "http://www.khomzeetek.click/",
+                  "Type": "CNAME",
+                  "TTL": 60,
+                  "ResourceRecords": [
+                    {
+                      "Value": "'"$ENV_CNAME"'"
+                    }
+                  ]
+                }
+              }
+            ]
+          }'
+
+        echo "DNS record for www.exampledomain.com updated to point to the live environment: $ENV_CNAME"
