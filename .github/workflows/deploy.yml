@@ -39,11 +39,12 @@ jobs:
     - name: Publish
       run: dotnet publish -c Release -r linux-x64 --self-contained true -o publish_output
 
-    - name: Create version label
-      id: create-version
+    - name: Create Version Label
+      id: create_version
       run: |
-        VERSION="ver-${{ github.run_id }}-$(date +%s)"
-        echo "version_label=$VERSION" >> $GITHUB_OUTPUT
+        VERSION_LABEL="ver-${{ github.run_id }}-${{ github.run_number }}"
+        echo "VERSION_LABEL=$VERSION_LABEL" >> $GITHUB_ENV
+        echo "version_label=$VERSION_LABEL" >> $GITHUB_OUTPUT
 
     - name: Zip publish output
       run: |
@@ -59,7 +60,7 @@ jobs:
 
     - name: Upload ZIP to S3
       run: |
-        aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/$VERSION.zip
+        aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ env.VERSION_LABEL }}.zip
 
     - name: Determine active environment
       id: determine-env
