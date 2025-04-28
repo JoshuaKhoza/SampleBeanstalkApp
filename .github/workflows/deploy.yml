@@ -93,6 +93,16 @@ jobs:
           exit 1
         fi
 
+        # Set the corresponding environment
+        if [ "$DEPLOY_ENV" == "blue" ]; then
+          echo "deploy_env=${DEV_ENV}" >> $GITHUB_OUTPUT
+        elif [ "$DEPLOY_ENV" == "green" ]; then
+          echo "deploy_env=${PROD_ENV}" >> $GITHUB_OUTPUT
+        else
+          echo "Invalid environment specified!"
+          exit 1
+        fi
+
     - name: Deploy to selected environment
       run: |
         aws elasticbeanstalk create-application-version \
