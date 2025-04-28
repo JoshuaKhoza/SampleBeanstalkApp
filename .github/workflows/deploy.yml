@@ -17,6 +17,8 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    outputs:
+      version_label: ${{ steps.create_version.outputs.version_label }}
 
     steps:
     - name: Checkout Code
@@ -76,6 +78,27 @@ jobs:
         echo "Waiting for inactive environment deployment..."
         aws elasticbeanstalk wait environment-updated --environment-name ${{ env.INACTIVE_ENV }}
         echo "Deployment to inactive environment completed."
+
+  manual-approval:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://${{ env.INACTIVE_ENV }}.eba-hvepxiqp.us-east-1.elasticbeanstalk.com
+    steps:
+    - name: Await Manual Approval
+      run: echo "Waiting for manual approval to swap CNAMEs..."
+
+  swap-cnames:
+    needs: manual-approval
+    runs-on: ubuntu-latest
+    steps:
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
 
     - name: Swap Environment CNAMEs
       run: |
