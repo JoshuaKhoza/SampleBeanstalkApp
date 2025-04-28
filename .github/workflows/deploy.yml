@@ -42,7 +42,7 @@ jobs:
     - name: Create version label
       id: create-version
       run: |
-        VERSION="ver-${{ github.run_id }}-$(date +%s)"
+        VERSION="ver-${{ github.run_id }}"
         echo "version_label=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Zip publish output
