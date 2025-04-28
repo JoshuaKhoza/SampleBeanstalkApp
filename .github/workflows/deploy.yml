@@ -1,6 +1,9 @@
 name: Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)
 
 on:
+  push:
+    branches:
+      - main  # Trigger on commits to main branch
   workflow_dispatch:
     inputs:
       deploy_environment:
