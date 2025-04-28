@@ -141,8 +141,6 @@ jobs:
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Swap Blue-Green Environments
-      env:
-        DEPLOY_ENV: ${{ needs.build-and-deploy.outputs.deploy_env }}
       run: |
         # Get the version labels for both environments
         BLUE_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
