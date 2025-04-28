@@ -88,7 +88,8 @@ jobs:
           exit 1
         fi
 
-        echo "deploy_env_tg=$DEPLOY_ENV_TG" >> $GITHUB_OUTPUT
+        #echo "deploy_env_tg=$DEPLOY_ENV_TG" >> $GITHUB_OUTPUT
+        echo "deploy_env_tg=$DEPLOY_ENV_TG" >> $GITHUB_ENV
         echo "environment specified! $DEPLOY_ENV_TG"
 
         # Set the corresponding environment
@@ -162,7 +163,6 @@ jobs:
           echo "Green Version: $GREEN_VERSION_LABEL"
       
           # Get the environment from the previous step
-          DEPLOY_ENV_TG=${{ needs.build-and-deploy.outputs.deploy_env }}
           echo "Selected environment from previous step: $DEPLOY_ENV_TG"
       
           if [ "$DEPLOY_ENV_TG" == "blue" ]; then
