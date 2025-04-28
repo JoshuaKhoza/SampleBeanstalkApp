@@ -79,25 +79,17 @@ jobs:
         # Check if the commit message contains [blue] or [green]
         if [[ "$COMMIT_MSG" == *"[blue]"* ]]; then
           DEPLOY_ENV="blue"
+          echo "deploy_env=${{ secrets.DEV_ENV }}" >> $GITHUB_ENV
+          echo "deploy_env=${{ secrets.DEV_ENV }}" >> $GITHUB_OUTPUT
+
           echo "Deploying to Blue environment (from commit message)."
         elif [[ "$COMMIT_MSG" == *"[green]"* ]]; then
           DEPLOY_ENV="green"
+          echo "deploy_env=${{ secrets.PROD_ENV }}" >> $GITHUB_ENV
+          echo "deploy_env=${{ secrets.PROD_ENV }}" >> $GITHUB_OUTPUT
           echo "Deploying to Green environment (from commit message)."
         else
           echo "No environment specified in commit message! Please use '[blue]' or '[green]' in the commit message."
-          exit 1
-        fi
-
-        # Log and set the corresponding environment for later steps
-        echo "Selected environment: $DEPLOY_ENV"
-        if [ "$DEPLOY_ENV" == "blue" ]; then
-          echo "deploy_env=${{ secrets.DEV_ENV }}" >> $GITHUB_ENV
-          echo "deploy_env=${{ secrets.DEV_ENV }}" >> $GITHUB_OUTPUT
-        elif [ "$DEPLOY_ENV" == "green" ]; then
-          echo "deploy_env=${{ secrets.PROD_ENV }}" >> $GITHUB_ENV
-          echo "deploy_env=${{ secrets.PROD_ENV }}" >> $GITHUB_OUTPUT
-        else
-          echo "Invalid environment specified!"
           exit 1
         fi
 
