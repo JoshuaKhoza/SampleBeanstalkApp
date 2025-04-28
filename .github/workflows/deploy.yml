@@ -134,8 +134,12 @@ jobs:
     needs: wait-for-approval
     runs-on: ubuntu-latest
     env:
+      DOTNET_VERSION: '9.0'
       AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_S3_BUCKET: ${{ secrets.S3_BUCKET }}
       APPLICATION_NAME: 'sample-eb-dotnet-app'
+      PROD_ENV: 'sample-eb-dotnet-app-green'
+      DEV_ENV: 'sample-eb-dotnet-app-blue'
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -158,26 +162,21 @@ jobs:
             --environment-names $PROD_ENV \
             --query "Environments[0].VersionLabel" \
             --output text)
-      
-          echo "Blue Version: $BLUE_VERSION_LABEL"
-          echo "Green Version: $GREEN_VERSION_LABEL"
-      
-          # Now we can access DEPLOY_ENV_TG from the previous job
-          echo "Selected environment from previous step: ${{ needs.build-and-deploy.outputs.deploy_env }}"
 
+          # Determine which environment was selected for deployment
           if [ "${{ needs.build-and-deploy.outputs.deploy_env }}" == "blue" ]; then
-            echo "Deployment was to Blue ($DEV_ENV), swapping Blue with Green ($PROD_ENV)."
+            echo "Swapping Blue ($DEV_ENV) with Green ($PROD_ENV)."
             SOURCE_ENV=$DEV_ENV
             TARGET_ENV=$PROD_ENV
           elif [ "${{ needs.build-and-deploy.outputs.deploy_env }}" == "green" ]; then
-            echo "Deployment was to Green ($PROD_ENV), swapping Green with Blue ($DEV_ENV)."
+            echo "Swapping Green ($PROD_ENV) with Blue ($DEV_ENV)."
             SOURCE_ENV=$PROD_ENV
             TARGET_ENV=$DEV_ENV
           else
             echo "Invalid environment selected: ${{ needs.build-and-deploy.outputs.deploy_env }}"
             exit 1
           fi
-      
+
           # Swap CNAMEs to make the new environment live
           echo "Swapping CNAMEs: $SOURCE_ENV → $TARGET_ENV"
           aws elasticbeanstalk swap-environment-cnames \
@@ -190,5 +189,5 @@ jobs:
             --environment-names $TARGET_ENV \
             --query "Environments[0].CNAME" \
             --output text)
-      
+
           echo "Live environment CNAME: $ENV_CNAME"
