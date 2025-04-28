@@ -1,4 +1,4 @@
-name: Blue-Green Deploy .NET App to Elastic Beanstalk
+name: Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)
 
 on:
   push:
@@ -6,22 +6,23 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  DOTNET_VERSION: '9.0'
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  AWS_S3_BUCKET: ${{ secrets.S3_BUCKET }}
-  ACTIVE_ENV: sample-eb-dotnet-app-prod
-  INACTIVE_ENV: sample-eb-dotnet-app-dev
-  APP_NAME: sample-eb-dotnet-app
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     outputs:
-      version_label: ${{ steps.create_version.outputs.version_label }}
+      version_label: ${{ steps.create-version.outputs.version_label }}
+      source_env: ${{ steps.determine-env.outputs.source_env }}
+      target_env: ${{ steps.determine-env.outputs.target_env }}
+    env:
+      DOTNET_VERSION: '9.0'
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+      APPLICATION_NAME: 'sample-eb-dotnet-app'
+      PROD_ENV: 'sample-eb-dotnet-app-green'
+      DEV_ENV: 'sample-eb-dotnet-app-blue'
 
     steps:
-    - name: Checkout Code
+    - name: Checkout code
       uses: actions/checkout@v3
 
     - name: Set up .NET
@@ -29,7 +30,7 @@ jobs:
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Restore Dependencies
+    - name: Restore dependencies
       run: dotnet restore
 
     - name: Build
@@ -38,71 +39,86 @@ jobs:
     - name: Publish
       run: dotnet publish -c Release -r linux-x64 --self-contained true -o publish_output
 
-    - name: Zip Publish Output
+    - name: Create version label
+      id: create-version
+      run: |
+        VERSION="ver-${{ github.run_id }}-$(date +%s)"
+        echo "version_label=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Zip publish output
       run: |
         cd publish_output
         zip -r ../app.zip .
 
-    - name: Configure AWS Credentials
+    - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Create Version Label
-      id: create_version
+    - name: Upload ZIP to S3
       run: |
-        VERSION_LABEL="ver-${{ github.run_id }}-${{ github.run_number }}"
-        echo "VERSION_LABEL=$VERSION_LABEL" >> $GITHUB_ENV
-        echo "version_label=$VERSION_LABEL" >> $GITHUB_OUTPUT
+        aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/$VERSION.zip
 
-    - name: Upload App.zip to S3
+    - name: Determine active environment
+      id: determine-env
       run: |
-        aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ env.VERSION_LABEL }}.zip
+        ACTIVE_ENV=$(aws elasticbeanstalk describe-environments --application-name $APPLICATION_NAME --query "Environments[?Status=='Ready'].[EnvironmentName,CNAME]" --output text | grep "${PROD_ENV}" || true)
+        if [ -n "$ACTIVE_ENV" ]; then
+          echo "source_env=${PROD_ENV}" >> $GITHUB_OUTPUT
+          echo "target_env=${DEV_ENV}" >> $GITHUB_OUTPUT
+        else
+          echo "source_env=${DEV_ENV}" >> $GITHUB_OUTPUT
+          echo "target_env=${PROD_ENV}" >> $GITHUB_OUTPUT
+        fi
 
-    - name: Deploy to Inactive Environment
+    - name: Deploy to target environment
       run: |
         aws elasticbeanstalk create-application-version \
-          --application-name ${{ env.APP_NAME }} \
-          --version-label ${{ env.VERSION_LABEL }} \
-          --source-bundle S3Bucket=${{ env.AWS_S3_BUCKET }},S3Key=app-${{ env.VERSION_LABEL }}.zip \
-          --auto-create-application
+          --application-name $APPLICATION_NAME \
+          --version-label $VERSION \
+          --source-bundle S3Bucket=$AWS_S3_BUCKET,S3Key=$VERSION.zip
 
         aws elasticbeanstalk update-environment \
-          --environment-name ${{ env.INACTIVE_ENV }} \
-          --version-label ${{ env.VERSION_LABEL }}
+          --application-name $APPLICATION_NAME \
+          --environment-name ${{ steps.determine-env.outputs.target_env }} \
+          --version-label $VERSION
 
-    - name: Wait for Deployment to Finish
+    - name: Wait for target environment to be healthy
       run: |
-        echo "Waiting for inactive environment deployment..."
-        aws elasticbeanstalk wait environment-updated --environment-name ${{ env.INACTIVE_ENV }}
-        echo "Deployment to inactive environment completed."
+        echo "Waiting for environment ${{ steps.determine-env.outputs.target_env }} to be healthy..."
+        aws elasticbeanstalk wait environment-health \
+          --environment-name ${{ steps.determine-env.outputs.target_env }} \
+          --health green
+        echo "Environment ${{ steps.determine-env.outputs.target_env }} is healthy!"
 
-  manual-approval:
+  wait-for-approval:
     needs: build-and-deploy
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://${{ env.INACTIVE_ENV }}.eba-hvepxiqp.us-east-1.elasticbeanstalk.com
+      url: https://${{ needs.build-and-deploy.outputs.target_env }}.eba-hvepxiqp.us-east-1.elasticbeanstalk.com
     steps:
-    - name: Await Manual Approval
-      run: echo "Waiting for manual approval to swap CNAMEs..."
+    - name: Wait for manual approval
+      run: echo "Please approve the deployment to swap environments."
 
   swap-cnames:
-    needs: manual-approval
+    needs: wait-for-approval
     runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      APPLICATION_NAME: 'sample-eb-dotnet-app'
     steps:
-    - name: Configure AWS Credentials
+    - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Swap Environment CNAMEs
+    - name: Swap CNAMEs
       run: |
-        echo "Swapping CNAMEs: ${ACTIVE_ENV} <-> ${INACTIVE_ENV}"
         aws elasticbeanstalk swap-environment-cnames \
-          --source-environment-name ${{ env.ACTIVE_ENV }} \
-          --destination-environment-name ${{ env.INACTIVE_ENV }}
+          --source-environment-name ${{ needs.build-and-deploy.outputs.source_env }} \
+          --destination-environment-name ${{ needs.build-and-deploy.outputs.target_env }}
