@@ -158,25 +158,24 @@ jobs:
         echo "Blue Version: $BLUE_VERSION_LABEL"
         echo "Green Version: $GREEN_VERSION_LABEL"
 
-        # Get the environment from the previous step
-        DEPLOY_ENV=${{ github.event.inputs.deploy_environment }}
+        # Get the environment from previous step
+        DEPLOY_ENV=${{ needs.build-and-deploy.outputs.deploy_env }}
+        echo "Selected environment from previous step: $DEPLOY_ENV"
 
-        if [ "$DEPLOY_ENV" == "blue" ]; then
-          # If the deployment was to Blue, swap with Green
-          echo "Deployment was to Blue, swapping Blue with Green."
-          TARGET_ENV=$PROD_ENV
+        if [ "$DEPLOY_ENV" == "$DEV_ENV" ]; then
+          echo "Deployment was to Blue ($DEV_ENV), swapping Blue with Green ($PROD_ENV)."
           SOURCE_ENV=$DEV_ENV
-        elif [ "$DEPLOY_ENV" == "green" ]; then
-          # If the deployment was to Green, swap with Blue
-          echo "Deployment was to Green, swapping Green with Blue."
-          TARGET_ENV=$DEV_ENV
+          TARGET_ENV=$PROD_ENV
+        elif [ "$DEPLOY_ENV" == "$PROD_ENV" ]; then
+          echo "Deployment was to Green ($PROD_ENV), swapping Green with Blue ($DEV_ENV)."
           SOURCE_ENV=$PROD_ENV
+          TARGET_ENV=$DEV_ENV
         else
-          echo "Invalid environment selected!"
+          echo "Invalid environment selected: $DEPLOY_ENV"
           exit 1
         fi
 
-        # Swap CNAMEs to make the environment with the new version live
+        # Swap CNAMEs to make the new environment live
         echo "Swapping CNAMEs: $SOURCE_ENV → $TARGET_ENV"
         aws elasticbeanstalk swap-environment-cnames \
           --source-environment-name "$SOURCE_ENV" \
