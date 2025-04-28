@@ -152,26 +152,48 @@ jobs:
 
     - name: Swap Blue-Green Environments
       run: |
-        TARGET=${{ needs.build-and-deploy.outputs.target_env }}
-        if [ "$TARGET" = "${{ secrets.EB_ENV_BLUE }}" ]; then
-          SOURCE=${{ secrets.EB_ENV_BLUE }}
-          DEST=${{ secrets.EB_ENV_GREEN }}
+        # Get the version labels for both environments
+        BLUE_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
+          --application-name $APPLICATION_NAME \
+          --environment-names $DEV_ENV \
+          --query "Environments[0].VersionLabel" \
+          --output text)
+    
+        GREEN_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
+          --application-name $APPLICATION_NAME \
+          --environment-names $PROD_ENV \
+          --query "Environments[0].VersionLabel" \
+          --output text)
+    
+        echo "Blue Version: $BLUE_VERSION_LABEL"
+        echo "Green Version: $GREEN_VERSION_LABEL"
+    
+        # Determine which environment has the new version
+        if [ "$BLUE_VERSION_LABEL" == "$GREEN_VERSION_LABEL" ]; then
+          echo "Both environments have the same version, assuming Green is live."
+          TARGET_ENV=$PROD_ENV
+          SOURCE_ENV=$DEV_ENV
+        elif [ "$BLUE_VERSION_LABEL" > "$GREEN_VERSION_LABEL" ]; then
+          echo "Blue environment has a newer version, setting Blue as live."
+          TARGET_ENV=$DEV_ENV
+          SOURCE_ENV=$PROD_ENV
         else
-          SOURCE=${{ secrets.EB_ENV_GREEN }}
-          DEST=${{ secrets.EB_ENV_BLUE }}
+          echo "Green environment has a newer version, setting Green as live."
+          TARGET_ENV=$PROD_ENV
+          SOURCE_ENV=$DEV_ENV
         fi
-        echo "Swapping CNAMEs: $SOURCE → $DEST"
+    
+        # Swap CNAMEs to make the environment with the new version live
+        echo "Swapping CNAMEs: $SOURCE_ENV → $TARGET_ENV"
         aws elasticbeanstalk swap-environment-cnames \
-          --source-environment-name "$SOURCE" \
-          --destination-environment-name "$DEST"
-
-    - name: Update DNS to point to live environment
-      run: |
-        ACTIVE_ENV=${{ needs.build-and-deploy.outputs.target_env }}
+          --source-environment-name "$SOURCE_ENV" \
+          --destination-environment-name "$TARGET_ENV"
+    
+        # Fetch the CNAME of the live environment (the one with the new version)
         ENV_CNAME=$(aws elasticbeanstalk describe-environments \
           --application-name $APPLICATION_NAME \
-          --environment-names $ACTIVE_ENV \
+          --environment-names $TARGET_ENV \
           --query "Environments[0].CNAME" \
           --output text)
-
+      
       
