@@ -89,10 +89,9 @@ jobs:
     - name: Wait for target environment to be healthy
       run: |
         echo "Waiting for environment ${{ steps.determine-env.outputs.target_env }} to be healthy..."
-        aws elasticbeanstalk wait environment-health \
-          --environment-name ${{ steps.determine-env.outputs.target_env }} \
-          --health green
-        echo "Environment ${{ steps.determine-env.outputs.target_env }} is healthy!"
+        aws elasticbeanstalk wait environment-updated \
+          --environment-name ${{ steps.determine-env.outputs.target_env }}
+        echo "Environment ${{ steps.determine-env.outputs.target_env }} has been successfully updated!"
 
   wait-for-approval:
     needs: build-and-deploy
