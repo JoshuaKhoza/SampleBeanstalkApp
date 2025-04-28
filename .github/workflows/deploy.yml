@@ -11,7 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version_label: ${{ steps.create_version.outputs.version_label }}
-      inactive_env_target: ${{ steps.determine-env.outputs.inactive_env_target }}
+      source_env: ${{ steps.determine-env.outputs.source_env }}
+      target_env: ${{ steps.determine-env.outputs.target_env }}
     env:
       DOTNET_VERSION: '9.0'
       AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -61,21 +62,19 @@ jobs:
       run: |
         aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ env.VERSION_LABEL }}.zip
 
-    - name: Determine inactive environment
+    - name: Determine active environment
       id: determine-env
       run: |
-        # Determine which environment is inactive (either Green or Blue)
-        ACTIVE_GREEN_ENV=$(aws elasticbeanstalk describe-environments --application-name $APPLICATION_NAME --query "Environments[?EnvironmentName=='$PROD_ENV'].[Health]" --output text)
-        ACTIVE_BLUE_ENV=$(aws elasticbeanstalk describe-environments --application-name $APPLICATION_NAME --query "Environments[?EnvironmentName=='$DEV_ENV'].[Health]" --output text)
-
-        if [ "$ACTIVE_GREEN_ENV" != "Green" ]; then
-          # Green is inactive, deploy to Green
-          echo "inactive_env_target=${PROD_ENV}" >> $GITHUB_ENV
-          echo "inactive_env_target=${PROD_ENV}" >> $GITHUB_OUTPUT
+        # Check if the Green environment is active (i.e., "Healthy" or "Ready")
+        ACTIVE_GREEN_ENV=$(aws elasticbeanstalk describe-environments --application-name $APPLICATION_NAME --query "Environments[?EnvironmentName=='$PROD_ENV'].[Status]" --output text)
+        if [ "$ACTIVE_GREEN_ENV" == "Ready" ]; then
+          # Green is active, so deploy to Blue
+          echo "source_env=${PROD_ENV}" >> $GITHUB_OUTPUT
+          echo "target_env=${DEV_ENV}" >> $GITHUB_OUTPUT
         else
-          # Blue is inactive, deploy to Blue
-          echo "inactive_env_target=${DEV_ENV}" >> $GITHUB_ENV
-          echo "inactive_env_target=${DEV_ENV}" >> $GITHUB_OUTPUT
+          # Blue is active, so deploy to Green
+          echo "source_env=${DEV_ENV}" >> $GITHUB_OUTPUT
+          echo "target_env=${PROD_ENV}" >> $GITHUB_OUTPUT
         fi
 
     - name: Deploy to target environment
@@ -87,38 +86,20 @@ jobs:
 
         aws elasticbeanstalk update-environment \
           --application-name $APPLICATION_NAME \
-          --environment-name ${{ steps.determine-env.outputs.inactive_env_target }} \
+          --environment-name ${{ steps.determine-env.outputs.target_env }} \
           --version-label ${{ steps.create_version.outputs.version_label }}
 
-    - name: Wait for target environment to be healthy
+    - name: Wait for both environments to be healthy
       run: |
-        echo "Waiting for environment ${{ steps.determine-env.outputs.inactive_env_target }} to be healthy..."
-        while true; do
-          ENV_HEALTH=$(aws elasticbeanstalk describe-environments --application-name $APPLICATION_NAME --environment-name ${{ steps.determine-env.outputs.inactive_env_target }} --query "Environments[0].Health" --output text)
-          if [ "$ENV_HEALTH" == "Green" ]; then
-            echo "Environment ${{ steps.determine-env.outputs.inactive_env_target }} is healthy!"
-            break
-          elif [ "$ENV_HEALTH" == "Red" ]; then
-            echo "Environment ${{ steps.determine-env.outputs.inactive_env_target }} is unhealthy! Exiting..."
-            exit 1
-          else
-            echo "Environment ${{ steps.determine-env.outputs.inactive_env_target }} is not healthy yet. Waiting..."
-            sleep 30
-          fi
-        done
-
-  wait-for-approval:
-    needs: build-and-deploy
-    runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://${{ needs.build-and-deploy.outputs.inactive_env_target }}.eba-hvepxiqp.us-east-1.elasticbeanstalk.com
-    steps:
-    - name: Wait for manual approval
-      run: echo "Please approve the deployment to swap environments."
+        echo "Waiting for the environments to be healthy..."
+        aws elasticbeanstalk wait environment-updated \
+          --environment-name ${{ steps.determine-env.outputs.target_env }}
+        aws elasticbeanstalk wait environment-updated \
+          --environment-name ${{ steps.determine-env.outputs.source_env }}
+        echo "Both environments are healthy!"
 
   swap-cnames:
-    needs: wait-for-approval
+    needs: build-and-deploy
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -133,7 +114,7 @@ jobs:
 
     - name: Swap Blue-Green Environments
       run: |
-        TARGET=${{ needs.build-and-deploy.outputs.inactive_env_target }}
+        TARGET=${{ needs.build-and-deploy.outputs.target_env }}
         if [ "$TARGET" = "${{ secrets.EB_ENV_BLUE }}" ]; then
           SOURCE=${{ secrets.EB_ENV_BLUE }}
           DEST=${{ secrets.EB_ENV_GREEN }}
