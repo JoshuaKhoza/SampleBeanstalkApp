@@ -18,8 +18,8 @@ jobs:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       AWS_S3_BUCKET: ${{ secrets.S3_BUCKET }}
       APPLICATION_NAME: 'sample-eb-dotnet-app'
-      PROD_ENV: 'sample-eb-dotnet-app-prod'
-      DEV_ENV: 'sample-eb-dotnet-app-dev'
+      PROD_ENV: 'sample-eb-dotnet-app-green'
+      DEV_ENV: 'sample-eb-dotnet-app-blue'
 
     steps:
     - name: Checkout code
