@@ -10,7 +10,7 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     outputs:
-      version_label: ${{ steps.create-version.outputs.version_label }}
+      version_label: ${{ steps.create_version.outputs.version_label }}
       source_env: ${{ steps.determine-env.outputs.source_env }}
       target_env: ${{ steps.determine-env.outputs.target_env }}
     env:
@@ -66,8 +66,8 @@ jobs:
       id: determine-env
       run: |
         # Check if the green environment is active (i.e., "Healthy" or "Ready")
-        ACTIVE_GREEN_ENV=$(aws elasticbeanstalk describe-environments --application-name $APPLICATION_NAME --query "Environments[?EnvironmentName=='$PROD_ENV'].[Status]" --output text)
-        if [ "$ACTIVE_GREEN_ENV" == "Ready" ]; then
+        ACTIVE_GREEN_ENV=$(aws elasticbeanstalk describe-environments --application-name $APPLICATION_NAME --query "Environments[?EnvironmentName=='$PROD_ENV'].[Health]" --output text)
+        if [ "$ACTIVE_GREEN_ENV" == "Green" ]; then
           # Green is active, so deploy to blue
           echo "source_env=${PROD_ENV}" >> $GITHUB_OUTPUT
           echo "target_env=${DEV_ENV}" >> $GITHUB_OUTPUT
@@ -81,21 +81,30 @@ jobs:
       run: |
         aws elasticbeanstalk create-application-version \
           --application-name $APPLICATION_NAME \
-          --version-label $VERSION_LABEL \
-          --source-bundle S3Bucket=$AWS_S3_BUCKET,S3Key=$VERSION_LABEL.zip
+          --version-label ${{ steps.create_version.outputs.version_label }} \
+          --source-bundle S3Bucket=$AWS_S3_BUCKET,S3Key=app-${{ steps.create_version.outputs.version_label }}.zip
 
         aws elasticbeanstalk update-environment \
           --application-name $APPLICATION_NAME \
           --environment-name ${{ steps.determine-env.outputs.target_env }} \
-          --version-label $VERSION_LABEL
+          --version-label ${{ steps.create_version.outputs.version_label }}
 
     - name: Wait for target environment to be healthy
       run: |
         echo "Waiting for environment ${{ steps.determine-env.outputs.target_env }} to be healthy..."
-        aws elasticbeanstalk wait environment-updated \
-          --environment-name ${{ steps.determine-env.outputs.target_env }} \
-          --health green
-        echo "Environment ${{ steps.determine-env.outputs.target_env }} is healthy!"
+        while true; do
+          ENV_HEALTH=$(aws elasticbeanstalk describe-environments --application-name $APPLICATION_NAME --environment-name ${{ steps.determine-env.outputs.target_env }} --query "Environments[0].Health" --output text)
+          if [ "$ENV_HEALTH" == "Green" ]; then
+            echo "Environment ${{ steps.determine-env.outputs.target_env }} is healthy!"
+            break
+          elif [ "$ENV_HEALTH" == "Red" ]; then
+            echo "Environment ${{ steps.determine-env.outputs.target_env }} is unhealthy! Exiting..."
+            exit 1
+          else
+            echo "Environment ${{ steps.determine-env.outputs.target_env }} is not healthy yet. Waiting..."
+            sleep 30
+          fi
+        done
 
   wait-for-approval:
     needs: build-and-deploy
@@ -123,6 +132,7 @@ jobs:
 
     - name: Swap CNAMEs
       run: |
+        echo "Swapping CNAMEs between ${{ needs.build-and-deploy.outputs.source_env }} and ${{ needs.build-and-deploy.outputs.target_env }}..."
         aws elasticbeanstalk swap-environment-cnames \
           --source-environment-name ${{ needs.build-and-deploy.outputs.source_env }} \
           --destination-environment-name ${{ needs.build-and-deploy.outputs.target_env }}
