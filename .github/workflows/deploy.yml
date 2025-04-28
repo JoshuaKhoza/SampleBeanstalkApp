@@ -64,22 +64,34 @@ jobs:
 
     - name: Upload ZIP to S3
       run: |
-        aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ env.VERSION_LABEL }}.zip
+        aws s3 cp app.zip s3://${{ env.AWS_S3_BUCKET }}/app-${{ steps.create_version.outputs.version_label }}.zip
 
-    - name: Determine the selected environment
+    - name: Determine the selected environment from commit message
       id: determine-env
       run: |
-        DEPLOY_ENV=${{ github.event.inputs.deploy_environment }}
-        echo "Deploying to the $DEPLOY_ENV environment."
-        
+        # Get the most recent commit message
+        COMMIT_MSG=$(git log -1 --pretty=%B)
+        echo "Commit message: $COMMIT_MSG"
+
+        # Check if the commit message contains [blue] or [green]
+        if [[ "$COMMIT_MSG" == *"[blue]"* ]]; then
+          DEPLOY_ENV="blue"
+          echo "Deploying to Blue environment (from commit message)."
+        elif [[ "$COMMIT_MSG" == *"[green]"* ]]; then
+          DEPLOY_ENV="green"
+          echo "Deploying to Green environment (from commit message)."
+        else
+          echo "No environment specified in commit message! Please use '[blue]' or '[green]' in the commit message."
+          exit 1
+        fi
+
+        # Set the corresponding environment
         if [ "$DEPLOY_ENV" == "blue" ]; then
-          echo "Deploying to Blue environment."
           echo "deploy_env=${DEV_ENV}" >> $GITHUB_OUTPUT
         elif [ "$DEPLOY_ENV" == "green" ]; then
-          echo "Deploying to Green environment."
           echo "deploy_env=${PROD_ENV}" >> $GITHUB_OUTPUT
         else
-          echo "Invalid environment selected!"
+          echo "Invalid environment specified!"
           exit 1
         fi
 
@@ -143,7 +155,7 @@ jobs:
         echo "Blue Version: $BLUE_VERSION_LABEL"
         echo "Green Version: $GREEN_VERSION_LABEL"
 
-        # Determine which environment was deployed to
+        # Get the environment from the previous step
         DEPLOY_ENV=${{ github.event.inputs.deploy_environment }}
 
         if [ "$DEPLOY_ENV" == "blue" ]; then
