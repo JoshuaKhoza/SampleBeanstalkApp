@@ -123,6 +123,11 @@ jobs:
       AWS_REGION: ${{ secrets.AWS_REGION }}
       APPLICATION_NAME: 'sample-eb-dotnet-app'
     steps:
+    - name: Debug environment variables
+      run: |
+        echo "Source Environment: ${{ needs.build-and-deploy.outputs.source_env }}"
+        echo "Target Environment: ${{ needs.build-and-deploy.outputs.target_env }}"
+
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
