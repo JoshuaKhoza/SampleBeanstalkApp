@@ -141,6 +141,8 @@ jobs:
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Swap Blue-Green Environments
+      env:
+        DEPLOY_ENV: ${{ needs.build-and-deploy.outputs.deploy_env }}
       run: |
         # Get the version labels for both environments
         BLUE_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
@@ -148,20 +150,18 @@ jobs:
           --environment-names $DEV_ENV \
           --query "Environments[0].VersionLabel" \
           --output text)
-
+    
         GREEN_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
           --application-name $APPLICATION_NAME \
           --environment-names $PROD_ENV \
           --query "Environments[0].VersionLabel" \
           --output text)
-
+    
         echo "Blue Version: $BLUE_VERSION_LABEL"
         echo "Green Version: $GREEN_VERSION_LABEL"
-
-        # Get the environment from previous step
-        DEPLOY_ENV=${{ needs.build-and-deploy.outputs.deploy_env }}
+    
         echo "Selected environment from previous step: $DEPLOY_ENV"
-
+    
         if [ "$DEPLOY_ENV" == "$DEV_ENV" ]; then
           echo "Deployment was to Blue ($DEV_ENV), swapping Blue with Green ($PROD_ENV)."
           SOURCE_ENV=$DEV_ENV
@@ -174,18 +174,19 @@ jobs:
           echo "Invalid environment selected: $DEPLOY_ENV"
           exit 1
         fi
-
+    
         # Swap CNAMEs to make the new environment live
         echo "Swapping CNAMEs: $SOURCE_ENV → $TARGET_ENV"
         aws elasticbeanstalk swap-environment-cnames \
           --source-environment-name "$SOURCE_ENV" \
           --destination-environment-name "$TARGET_ENV"
-
+    
         # Fetch the CNAME of the live environment (the one with the new version)
         ENV_CNAME=$(aws elasticbeanstalk describe-environments \
           --application-name $APPLICATION_NAME \
           --environment-names $TARGET_ENV \
           --query "Environments[0].CNAME" \
           --output text)
-
+    
         echo "Live environment CNAME: $ENV_CNAME"
+    
