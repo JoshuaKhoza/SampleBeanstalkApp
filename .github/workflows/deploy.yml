@@ -88,9 +88,9 @@ jobs:
           exit 1
         fi
 
-        #echo "deploy_env_tg=$DEPLOY_ENV_TG" >> $GITHUB_OUTPUT
-        echo "deploy_env_tg=$DEPLOY_ENV_TG" >> $GITHUB_ENV
-        echo "environment specified! $DEPLOY_ENV_TG"
+        echo "deploy_env_tg=$DEPLOY_ENV_TG" >> $GITHUB_ENV  # Use GITHUB_ENV to pass to next steps
+        echo "deploy_env_tg=$DEPLOY_ENV_TG" >> $GITHUB_OUTPUT  # Make it available to the next job
+        echo "environment specified: $DEPLOY_ENV_TG"
 
         # Set the corresponding environment
         if [ "$DEPLOY_ENV_TG" == "blue" ]; then
@@ -162,19 +162,19 @@ jobs:
           echo "Blue Version: $BLUE_VERSION_LABEL"
           echo "Green Version: $GREEN_VERSION_LABEL"
       
-          # Get the environment from the previous step
-          echo "Selected environment from previous step: $DEPLOY_ENV_TG"
-      
-          if [ "$DEPLOY_ENV_TG" == "blue" ]; then
+          # Now we can access DEPLOY_ENV_TG from the previous job
+          echo "Selected environment from previous step: ${{ needs.build-and-deploy.outputs.deploy_env }}"
+
+          if [ "${{ needs.build-and-deploy.outputs.deploy_env }}" == "blue" ]; then
             echo "Deployment was to Blue ($DEV_ENV), swapping Blue with Green ($PROD_ENV)."
             SOURCE_ENV=$DEV_ENV
             TARGET_ENV=$PROD_ENV
-          elif [ "$DEPLOY_ENV_TG" == "green" ]; then
+          elif [ "${{ needs.build-and-deploy.outputs.deploy_env }}" == "green" ]; then
             echo "Deployment was to Green ($PROD_ENV), swapping Green with Blue ($DEV_ENV)."
             SOURCE_ENV=$PROD_ENV
             TARGET_ENV=$DEV_ENV
           else
-            echo "Invalid environment selected: $DEPLOY_ENV_TG"
+            echo "Invalid environment selected: ${{ needs.build-and-deploy.outputs.deploy_env }}"
             exit 1
           fi
       
