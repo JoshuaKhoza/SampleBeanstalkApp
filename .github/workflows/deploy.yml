@@ -10,7 +10,7 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     outputs:
-      version_label: ${{ steps.create-version.outputs.version_label }}
+      version_label: ${{ steps.create_version.outputs.version_label }}
       source_env: ${{ steps.determine-env.outputs.source_env }}
       target_env: ${{ steps.determine-env.outputs.target_env }}
     env:
@@ -78,13 +78,13 @@ jobs:
       run: |
         aws elasticbeanstalk create-application-version \
           --application-name $APPLICATION_NAME \
-          --version-label $VERSION \
-          --source-bundle S3Bucket=$AWS_S3_BUCKET,S3Key=$VERSION.zip
+          --version-label ${{ steps.create_version.outputs.version_label }} \
+          --source-bundle S3Bucket=$AWS_S3_BUCKET,S3Key=app-${{ steps.create_version.outputs.version_label }}.zip
 
         aws elasticbeanstalk update-environment \
           --application-name $APPLICATION_NAME \
           --environment-name ${{ steps.determine-env.outputs.target_env }} \
-          --version-label $VERSION
+          --version-label ${{ steps.create_version.outputs.version_label }}
 
     - name: Wait for target environment to be healthy
       run: |
