@@ -78,28 +78,28 @@ jobs:
 
         # Check if the commit message contains [blue] or [green]
         if [[ "$COMMIT_MSG" == *"[blue]"* ]]; then
-          DEPLOY_ENV="blue"
+          DEPLOY_ENV_TG="blue"
           echo "Deploying to Blue environment (from commit message)."
         elif [[ "$COMMIT_MSG" == *"[green]"* ]]; then
-          DEPLOY_ENV="green"
+          DEPLOY_ENV_TG="green"
           echo "Deploying to Green environment (from commit message)."
         else
           echo "No environment specified in commit message! Please use '[blue]' or '[green]' in the commit message."
           exit 1
         fi
 
-        echo "deploy_env=$DEPLOY_ENV" >> $GITHUB_OUTPUT
-        echo "Invalid environment specified! $DEPLOY_ENV"
+        echo "deploy_env=$DEPLOY_ENV_TG" >> $GITHUB_OUTPUT
+        echo "environment specified! $DEPLOY_ENV_TG"
 
-        # # Set the corresponding environment
-        # if [ "$DEPLOY_ENV" == "blue" ]; then
-        #   echo "deploy_env=${DEV_ENV}" >> $GITHUB_OUTPUT
-        # elif [ "$DEPLOY_ENV" == "green" ]; then
-        #   echo "deploy_env=${PROD_ENV}" >> $GITHUB_OUTPUT
-        # else
-        #   echo "Invalid environment specified!"
-        #   exit 1
-        # fi
+        # Set the corresponding environment
+        if [ "$DEPLOY_ENV_TG" == "blue" ]; then
+          echo "deploy_env=${DEV_ENV}" >> $GITHUB_OUTPUT
+        elif [ "$DEPLOY_ENV_TG" == "green" ]; then
+          echo "deploy_env=${PROD_ENV}" >> $GITHUB_OUTPUT
+        else
+          echo "Invalid environment specified!"
+          exit 1
+        fi
 
     - name: Deploy to selected environment
       run: |
@@ -162,19 +162,19 @@ jobs:
           echo "Green Version: $GREEN_VERSION_LABEL"
       
           # Get the environment from the previous step
-          DEPLOY_ENV=${{ needs.build-and-deploy.outputs.deploy_env }}
-          echo "Selected environment from previous step: $DEPLOY_ENV"
+          DEPLOY_ENV_TG=${{ needs.build-and-deploy.outputs.deploy_env }}
+          echo "Selected environment from previous step: $DEPLOY_ENV_TG"
       
-          if [ "$DEPLOY_ENV" == "blue" ]; then
+          if [ "$DEPLOY_ENV_TG" == "blue" ]; then
             echo "Deployment was to Blue ($DEV_ENV), swapping Blue with Green ($PROD_ENV)."
             SOURCE_ENV=$DEV_ENV
             TARGET_ENV=$PROD_ENV
-          elif [ "$DEPLOY_ENV" == "green" ]; then
+          elif [ "$DEPLOY_ENV_TG" == "green" ]; then
             echo "Deployment was to Green ($PROD_ENV), swapping Green with Blue ($DEV_ENV)."
             SOURCE_ENV=$PROD_ENV
             TARGET_ENV=$DEV_ENV
           else
-            echo "Invalid environment selected: $DEPLOY_ENV"
+            echo "Invalid environment selected: $DEPLOY_ENV_TG"
             exit 1
           fi
       
