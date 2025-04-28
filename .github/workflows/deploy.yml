@@ -141,24 +141,4 @@ jobs:
           --query "Environments[0].CNAME" \
           --output text)
 
-        aws route53 change-resource-record-sets \
-          --hosted-zone-id ${{ secrets.ROUTE_53_HOSTED_ZONE_ID }} \
-          --change-batch '{
-            "Changes": [
-              {
-                "Action": "UPSERT",
-                "ResourceRecordSet": {
-                  "Name": "www.khomzeetek.click",
-                  "Type": "CNAME",
-                  "TTL": 60,
-                  "ResourceRecords": [
-                    {
-                      "Value": "'"$ENV_CNAME"'"
-                    }
-                  ]
-                }
-              }
-            ]
-          }'
-
-        echo "DNS record for www.khomzeetek.click updated to point to the live environment: $ENV_CNAME"
+      
