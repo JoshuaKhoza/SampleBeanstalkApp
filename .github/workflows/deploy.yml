@@ -141,6 +141,9 @@ jobs:
       PROD_ENV: 'sample-eb-dotnet-app-green'
       DEV_ENV: 'sample-eb-dotnet-app-blue'
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
