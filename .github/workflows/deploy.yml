@@ -98,8 +98,18 @@ jobs:
           --environment-name ${{ steps.determine-env.outputs.source_env }}
         echo "Both environments are healthy!"
 
-  swap-cnames:
+  wait-for-approval:
     needs: build-and-deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://${{ needs.build-and-deploy.outputs.target_env }}.eba-hvepxiqp.us-east-1.elasticbeanstalk.com
+    steps:
+    - name: Wait for manual approval
+      run: echo "Please approve the deployment to swap environments."
+
+  swap-cnames:
+    needs: wait-for-approval
     runs-on: ubuntu-latest
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
