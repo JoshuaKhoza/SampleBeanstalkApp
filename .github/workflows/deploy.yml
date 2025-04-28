@@ -69,10 +69,14 @@ jobs:
         ACTIVE_GREEN_ENV=$(aws elasticbeanstalk describe-environments --application-name $APPLICATION_NAME --query "Environments[?EnvironmentName=='$PROD_ENV'].[Health]" --output text)
         if [ "$ACTIVE_GREEN_ENV" == "Green" ]; then
           # Green is active, so deploy to blue
+          echo "source_env=${PROD_ENV}" >> $GITHUB_ENV
+          echo "target_env=${DEV_ENV}" >> $GITHUB_ENV
           echo "source_env=${PROD_ENV}" >> $GITHUB_OUTPUT
           echo "target_env=${DEV_ENV}" >> $GITHUB_OUTPUT
         else
           # Blue is active, so deploy to green
+          echo "source_env=${DEV_ENV}" >> $GITHUB_ENV
+          echo "target_env=${PROD_ENV}" >> $GITHUB_ENV
           echo "source_env=${DEV_ENV}" >> $GITHUB_OUTPUT
           echo "target_env=${PROD_ENV}" >> $GITHUB_OUTPUT
         fi
