@@ -157,7 +157,7 @@ jobs:
               {
                 "Action": "UPSERT",
                 "ResourceRecordSet": {
-                  "Name": "http://www.khomzeetek.click/",
+                  "Name": "www.khomzeetek.click",
                   "Type": "CNAME",
                   "TTL": 60,
                   "ResourceRecords": [
