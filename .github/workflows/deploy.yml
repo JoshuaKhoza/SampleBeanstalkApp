@@ -65,14 +65,44 @@ jobs:
     - name: Determine active environment
       id: determine-env
       run: |
-        ACTIVE_GREEN_ENV=$(aws elasticbeanstalk describe-environments --application-name $APPLICATION_NAME --query "Environments[?EnvironmentName=='$PROD_ENV'].[Status]" --output text)
-        if [ "$ACTIVE_GREEN_ENV" == "Ready" ]; then
+        # Fetch the version labels deployed to both Blue and Green environments
+        BLUE_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
+          --application-name $APPLICATION_NAME \
+          --environment-names $DEV_ENV \
+          --query "Environments[0].VersionLabel" \
+          --output text)
+
+        GREEN_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
+          --application-name $APPLICATION_NAME \
+          --environment-names $PROD_ENV \
+          --query "Environments[0].VersionLabel" \
+          --output text)
+
+        echo "Blue Environment Version: $BLUE_VERSION_LABEL"
+        echo "Green Environment Version: $GREEN_VERSION_LABEL"
+
+        # Compare version labels and deploy to the environment with the older version
+        if [ "$BLUE_VERSION_LABEL" == "$GREEN_VERSION_LABEL" ]; then
+          # Both environments have the same version, so deploy to the one that isn't live
+          # We can assume the live environment is PROD (Green), and deploy to DEV (Blue)
           echo "source_env=${PROD_ENV}" >> $GITHUB_OUTPUT
           echo "target_env=${DEV_ENV}" >> $GITHUB_OUTPUT
         else
-          echo "source_env=${DEV_ENV}" >> $GITHUB_OUTPUT
-          echo "target_env=${PROD_ENV}" >> $GITHUB_OUTPUT
+          # If version labels are different, deploy to the environment with the older version
+          if [ "$BLUE_VERSION_LABEL" == "$GREEN_VERSION_LABEL" ]; then
+            # If both environments have the same version
+            echo "source_env=${PROD_ENV}" >> $GITHUB_OUTPUT
+            echo "target_env=${DEV_ENV}" >> $GITHUB_OUTPUT
+          else
+            # The environment with the older version will be updated
+            if [ "$BLUE_VERSION_LABEL" != "$GREEN_VERSION_LABEL" ]; then
+              echo "source_env=${PROD_ENV}" >> $GITHUB_OUTPUT
+              echo "target_env=${DEV_ENV}" >> $GITHUB_OUTPUT
+            fi
+          fi
         fi
+
+      
 
     - name: Deploy to target environment
       run: |
