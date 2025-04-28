@@ -1,15 +1,11 @@
 name: Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)
 
 on:
-  # push:
-  #   branches:
-  #     - main
   workflow_dispatch:
     inputs:
       deploy_environment:
         description: 'Select the environment to deploy to (blue or green)'
         required: true
-        #default: 'blue'
         type: choice
         options:
           - blue
@@ -75,7 +71,7 @@ jobs:
       run: |
         DEPLOY_ENV=${{ github.event.inputs.deploy_environment }}
         echo "Deploying to the $DEPLOY_ENV environment."
-
+        
         if [ "$DEPLOY_ENV" == "blue" ]; then
           echo "Deploying to Blue environment."
           echo "deploy_env=${DEV_ENV}" >> $GITHUB_OUTPUT
@@ -102,8 +98,7 @@ jobs:
     - name: Wait for the environment to be healthy
       run: |
         aws elasticbeanstalk wait environment-updated \
-          --environment-name ${{ steps.determine-env.outputs.deploy_env }} \
-          --health 'Green'
+          --environment-name ${{ steps.determine-env.outputs.deploy_env }} 
         echo "The environment is healthy!"
 
   wait-for-approval:
@@ -114,7 +109,7 @@ jobs:
       url: https://${{ needs.build-and-deploy.outputs.deploy_env }}.eba-hvepxiqp.us-east-1.elasticbeanstalk.com
     steps:
     - name: Wait for manual approval
-      run: echo "Please approve the deployment."
+      run: echo "Please approve the deployment to swap environments."
 
   swap-cnames:
     needs: wait-for-approval
@@ -138,42 +133,45 @@ jobs:
           --environment-names $DEV_ENV \
           --query "Environments[0].VersionLabel" \
           --output text)
-    
+
         GREEN_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
           --application-name $APPLICATION_NAME \
           --environment-names $PROD_ENV \
           --query "Environments[0].VersionLabel" \
           --output text)
-    
+
         echo "Blue Version: $BLUE_VERSION_LABEL"
         echo "Green Version: $GREEN_VERSION_LABEL"
-    
-        # Determine which environment has the new version
-        if [ "$BLUE_VERSION_LABEL" == "$GREEN_VERSION_LABEL" ]; then
-          echo "Both environments have the same version, assuming Green is live."
+
+        # Determine which environment was deployed to
+        DEPLOY_ENV=${{ github.event.inputs.deploy_environment }}
+
+        if [ "$DEPLOY_ENV" == "blue" ]; then
+          # If the deployment was to Blue, swap with Green
+          echo "Deployment was to Blue, swapping Blue with Green."
           TARGET_ENV=$PROD_ENV
           SOURCE_ENV=$DEV_ENV
-        elif [ "$BLUE_VERSION_LABEL" > "$GREEN_VERSION_LABEL" ]; then
-          echo "Blue environment has a newer version, setting Blue as live."
+        elif [ "$DEPLOY_ENV" == "green" ]; then
+          # If the deployment was to Green, swap with Blue
+          echo "Deployment was to Green, swapping Green with Blue."
           TARGET_ENV=$DEV_ENV
           SOURCE_ENV=$PROD_ENV
         else
-          echo "Green environment has a newer version, setting Green as live."
-          TARGET_ENV=$PROD_ENV
-          SOURCE_ENV=$DEV_ENV
+          echo "Invalid environment selected!"
+          exit 1
         fi
-    
+
         # Swap CNAMEs to make the environment with the new version live
         echo "Swapping CNAMEs: $SOURCE_ENV → $TARGET_ENV"
         aws elasticbeanstalk swap-environment-cnames \
           --source-environment-name "$SOURCE_ENV" \
           --destination-environment-name "$TARGET_ENV"
-    
+
         # Fetch the CNAME of the live environment (the one with the new version)
         ENV_CNAME=$(aws elasticbeanstalk describe-environments \
           --application-name $APPLICATION_NAME \
           --environment-names $TARGET_ENV \
           --query "Environments[0].CNAME" \
           --output text)
-        
+
         echo "Live environment CNAME: $ENV_CNAME"
