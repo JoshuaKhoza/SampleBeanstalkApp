@@ -9,7 +9,6 @@ on:
     inputs:
       deploy_environment:
         description: 'Select the environment to deploy to (blue or green)'
-        required: true
         type: choice
         options:
           - blue
