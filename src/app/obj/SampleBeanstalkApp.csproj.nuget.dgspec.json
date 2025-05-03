@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\SampleBeanstalkApp.csproj": {}
+    "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\SampleBeanstalkApp.csproj": {}
   },
   "projects": {
-    "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\SampleBeanstalkApp.csproj": {
+    "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\SampleBeanstalkApp.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\SampleBeanstalkApp.csproj",
+        "projectUniqueName": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\SampleBeanstalkApp.csproj",
         "projectName": "SampleBeanstalkApp",
-        "projectPath": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\SampleBeanstalkApp.csproj",
+        "projectPath": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\SampleBeanstalkApp.csproj",
         "packagesPath": "C:\\Users\\client\\.nuget\\packages\\",
-        "outputPath": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\obj\\",
+        "outputPath": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\client\\AppData\\Roaming\\NuGet\\NuGet.Config"

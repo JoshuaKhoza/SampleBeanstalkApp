@@ -1,0 +1,4 @@
+# Distribution / packaging
+*.terraform/
+*.terraform.lock.hcl
+*/infra-backend.tfstate.backup
