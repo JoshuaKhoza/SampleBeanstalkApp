@@ -143,9 +143,9 @@ jobs:
       DOTNET_VERSION: '9.0'
       AWS_REGION: ${{ secrets.AWS_REGION }}
       APP_SOLUTION_BUCKET: ${{ secrets.SOLUTION_S3_BUCKET }}
-      APP_NAME: 'sample-eb-dotnet-app'
-      EB_ENV_GREEN: 'sample-eb-dotnet-app-green'
-      EB_ENV_BLUE: 'sample-eb-dotnet-app-blue'
+      APP_NAME: ${{ secrets.EB_APP_NAME }}
+      ENV_GREEN: ${{ secrets.EB_ENV_GREEN }}
+      ENV_BLUE: ${{ secrets.EB_ENV_BLUE }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
