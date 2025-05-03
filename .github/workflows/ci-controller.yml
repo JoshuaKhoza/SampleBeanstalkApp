@@ -40,29 +40,26 @@ jobs:
       - name: Determine the selected environment from commit message
         id: determine-env
         run: |
-          # Get the most recent commit message
+          # Extract environment from commit message
           COMMIT_MSG=$(git log -1 --pretty=%B)
           echo "Commit message: $COMMIT_MSG"
 
-          # Check if the commit message contains [blue] or [green]
-          if [[ "$COMMIT_MSG" == *"[blue]"* ]]; then
-            DEPLOY_ENV_TG="blue"
-            echo "Deploying to Blue environment (from commit message)."
-          elif [[ "$COMMIT_MSG" == *"[green]"* ]]; then
-            DEPLOY_ENV_TG="green"
-            echo "Deploying to Green environment (from commit message)."
-          else
-            echo "No environment specified in commit message! Please use '[blue]' or '[green]' in the commit message."
+          # Match and set deploy environment
+          DEPLOY_ENV_TG=$(echo "$COMMIT_MSG" | grep -oE '\[blue\]|\[green\]')
+          
+          if [[ -z "$DEPLOY_ENV_TG" ]]; then
+            echo "No environment specified in commit message. Use '[blue]' or '[green]'"
             exit 1
           fi
-          
-          # Ensure the output is treated as a string
-          echo "deploy_env=${DEPLOY_ENV_TG}" >> $GITHUB_ENV
-      
+
+          # Set the environment variable for downstream jobs
+          echo "deploy_env=${DEPLOY_ENV_TG//[\[\]]/}" >> $GITHUB_ENV
+          echo "Deploying to ${DEPLOY_ENV_TG//[\[\]]/} environment."
+
       - name: Trigger Final Deploy Workflow
         uses: benc-uk/workflow-dispatch@v1
         with:
           workflow: Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)
           token: ${{ secrets.GITHUB_TOKEN }}
-          inputs:
-            deploy_environment: ${{ env.deploy_env }
+        env:
+          deploy_environment: ${{ env.deploy_env }}  # Pass the dynamic environment as an env variable
