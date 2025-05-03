@@ -37,6 +37,9 @@ jobs:
       - name: Wait for successful completion
         run: echo "Both Deploy App Infra and Run Unit Tests completed successfully."
 
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Determine the selected environment from commit message
         id: determine-env
         run: |
