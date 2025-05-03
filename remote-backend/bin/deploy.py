@@ -9,7 +9,7 @@ from pathlib import Path
 ########################################################
 stage = 'int'
 domain = 'elb-app'
-command = 'destroy'
+command = 'apply'
 
 
 ########################################################
