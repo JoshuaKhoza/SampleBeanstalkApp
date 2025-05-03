@@ -7,10 +7,8 @@ on:
   workflow_dispatch:  # Allows manual triggering
 
 permissions:
-  id-token: write
   contents: read
-  security-events: write
-  actions: read
+  actions: write
 
 jobs:
   trigger-infra:
