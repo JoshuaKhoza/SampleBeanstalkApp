@@ -16,7 +16,6 @@ on:
 
 jobs:
   build-and-deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
       version_label: ${{ steps.create_version.outputs.version_label }}
