@@ -1,10 +1,10 @@
 name: Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)
 
 on:
-  # workflow_run:
-  #   workflows: ["Deploy App Infra"]
-  #   types:
-  #     - completed
+  workflow_run:
+    workflows: ["Deploy App Infra", "Run Unit Tests"]
+    types:
+      - completed
   # push:
   #   branches:
   #     - main  # Trigger on commits to main branch

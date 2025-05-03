@@ -26,6 +26,10 @@ jobs:
         run: dotnet restore
         working-directory: src/app
 
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+        working-directory: src/app
+
       - name: Run Unit Tests
         run: dotnet test --no-restore
         working-directory: src/app
