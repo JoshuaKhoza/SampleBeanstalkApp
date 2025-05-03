@@ -48,7 +48,6 @@ jobs:
         working-directory: infra/
         run: |
           terraform init \
-            -input=false \
             -backend-config="region=${{ env.AWS_REGION }}" \
             -backend-config="bucket=${{ env.S3_BACKEND }}" \
             -backend-config="dynamodb_table=${{ env.DB_BACKEND }}" \
