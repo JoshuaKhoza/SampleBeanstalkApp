@@ -67,6 +67,6 @@ jobs:
           TF_VAR_solution_stack: ${{ env.APP_SOLUTION_STACK }}
         run: terraform plan -input=false -out="plan"
 
-      # - name: Terraform Apply
-      #   working-directory: infra/
-      #   run: terraform apply -input=false "plan"
+      - name: Terraform Apply
+        working-directory: infra/
+        run: terraform apply -input=false "plan"
