@@ -6,6 +6,12 @@ on:
       - main
   workflow_dispatch:  # Allows manual triggering
 
+permissions:
+  id-token: write
+  contents: read
+  security-events: write
+  actions: read
+
 jobs:
   trigger-infra:
     runs-on: ubuntu-latest
