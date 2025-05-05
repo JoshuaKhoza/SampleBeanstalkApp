@@ -225,13 +225,12 @@ jobs:
           ENV_BLUE: ${{ env.ENV_BLUE }}
           ENV_GREEN: ${{ env.ENV_GREEN }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]; then
+          if [ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ] && [ -n "$WORKFLOW_ENV_INPUT" ]; then
             DEPLOY_ENV_TG="$WORKFLOW_ENV_INPUT"
             echo "Triggered by workflow_dispatch. Selected environment: $DEPLOY_ENV_TG"
           else
             COMMIT_MSG=$(git log -1 --pretty=%B)
-            echo "Commit message: $COMMIT_MSG"
-      
+            echo "Commit message: $COMMIT_MSG"\
             if [[ "$COMMIT_MSG" == *"[blue]"* ]]; then
               DEPLOY_ENV_TG="blue"
               echo "Deploying to Blue environment (from commit message)."
