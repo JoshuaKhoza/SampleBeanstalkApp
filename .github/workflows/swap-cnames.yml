@@ -1,0 +1,67 @@
+name: Swap Blue-Green Environments
+
+on:
+  workflow_run:
+    workflows: ["Build and Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)"]
+    types:
+      - completed
+
+jobs:
+  swap_cnames:
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_VERSION: '9.0'
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      APP_SOLUTION_BUCKET: ${{ secrets.SOLUTION_S3_BUCKET }}
+      APP_NAME: ${{ secrets.EB_APP_NAME }}
+      ENV_GREEN: ${{ secrets.EB_ENV_GREEN }}
+      ENV_BLUE: ${{ secrets.EB_ENV_BLUE }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Swap Blue-Green Environments
+        run: |
+          # Get the version labels for both environments
+          BLUE_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
+            --application-name $APP_NAME \
+            --environment-names $ENV_BLUE \
+            --query "Environments[0].VersionLabel" \
+            --output text)
+      
+          GREEN_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
+            --application-name $APP_NAME \
+            --environment-names $ENV_GREEN \
+            --query "Environments[0].VersionLabel" \
+            --output text)
+
+          # Determine which environment to swap
+          echo "Swap environments: Blue Version - $BLUE_VERSION_LABEL, Green Version - $GREEN_VERSION_LABEL"
+          
+          # Get environment names and decide which is live
+          if [[ "$BLUE_VERSION_LABEL" == "$GREEN_VERSION_LABEL" ]]; then
+            echo "Both environments are identical, no swap needed"
+            exit 0
+          fi
+
+          # Swap the CNAMEs between Blue and Green environments
+          echo "Swapping CNAMEs between $ENV_BLUE and $ENV_GREEN"
+          aws elasticbeanstalk swap-environment-cnames \
+            --source-environment-name $ENV_BLUE \
+            --destination-environment-name $ENV_GREEN
+
+          # Fetch and output the live environment CNAME
+          ENV_CNAME=$(aws elasticbeanstalk describe-environments \
+            --application-name $APP_NAME \
+            --environment-names $ENV_GREEN \
+            --query "Environments[0].CNAME" \
+            --output text)
+          
+          echo "Live environment CNAME is: $ENV_CNAME"

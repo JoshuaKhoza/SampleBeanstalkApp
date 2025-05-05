@@ -1,10 +1,6 @@
 name: Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)
 
 on:
-  # workflow_run:
-  #   workflows: ["Deploy App Infra", "Run Unit Tests"]
-  #   types:
-  #     - completed
   workflow_dispatch:
     inputs:
       deploy_environment:
@@ -136,86 +132,86 @@ jobs:
     - name: Wait for manual approval
       run: echo "Please approve the deployment to swap environments."
 
-  swap-cnames:
-    needs: wait-for-approval
-    runs-on: ubuntu-latest
-    env:
-      DOTNET_VERSION: '9.0'
-      AWS_REGION: ${{ secrets.AWS_REGION }}
-      APP_SOLUTION_BUCKET: ${{ secrets.SOLUTION_S3_BUCKET }}
-      APP_NAME: ${{ secrets.EB_APP_NAME }}
-      ENV_GREEN: ${{ secrets.EB_ENV_GREEN }}
-      ENV_BLUE: ${{ secrets.EB_ENV_BLUE }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+  # swap-cnames:
+  #   needs: wait-for-approval
+  #   runs-on: ubuntu-latest
+  #   env:
+  #     DOTNET_VERSION: '9.0'
+  #     AWS_REGION: ${{ secrets.AWS_REGION }}
+  #     APP_SOLUTION_BUCKET: ${{ secrets.SOLUTION_S3_BUCKET }}
+  #     APP_NAME: ${{ secrets.EB_APP_NAME }}
+  #     ENV_GREEN: ${{ secrets.EB_ENV_GREEN }}
+  #     ENV_BLUE: ${{ secrets.EB_ENV_BLUE }}
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v3
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v2
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: ${{ env.AWS_REGION }}
 
-      - name: Swap Blue-Green Environments
-        run: |
-          # Get the version labels for both environments
-          BLUE_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
-            --application-name $APP_NAME \
-            --environment-names $ENV_BLUE \
-            --query "Environments[0].VersionLabel" \
-            --output text)
+  #     - name: Swap Blue-Green Environments
+  #       run: |
+  #         # Get the version labels for both environments
+  #         BLUE_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
+  #           --application-name $APP_NAME \
+  #           --environment-names $ENV_BLUE \
+  #           --query "Environments[0].VersionLabel" \
+  #           --output text)
       
-          GREEN_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
-            --application-name $APP_NAME \
-            --environment-names $ENV_GREEN \
-            --query "Environments[0].VersionLabel" \
-            --output text)
+  #         GREEN_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
+  #           --application-name $APP_NAME \
+  #           --environment-names $ENV_GREEN \
+  #           --query "Environments[0].VersionLabel" \
+  #           --output text)
 
-      - name: Determine the selected environment from commit message
-        id: determine-env
-        run: |
-          # Get the most recent commit message
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-          echo "Commit message: $COMMIT_MSG"
+  #     - name: Determine the selected environment from commit message
+  #       id: determine-env
+  #       run: |
+  #         # Get the most recent commit message
+  #         COMMIT_MSG=$(git log -1 --pretty=%B)
+  #         echo "Commit message: $COMMIT_MSG"
 
-          # Check if the commit message contains [blue] or [green]
-          if [[ "$COMMIT_MSG" == *"[blue]"* ]]; then
-            DEPLOY_ENV_TG="blue"
-            echo "Deploying to Blue environment (from commit message)."
-          elif [[ "$COMMIT_MSG" == *"[green]"* ]]; then
-            DEPLOY_ENV_TG="green"
-            echo "Deploying to Green environment (from commit message)."
-          else
-            echo "No environment specified in commit message! Please use '[blue]' or '[green]' in the commit message."
-            exit 1
-          fi
+  #         # Check if the commit message contains [blue] or [green]
+  #         if [[ "$COMMIT_MSG" == *"[blue]"* ]]; then
+  #           DEPLOY_ENV_TG="blue"
+  #           echo "Deploying to Blue environment (from commit message)."
+  #         elif [[ "$COMMIT_MSG" == *"[green]"* ]]; then
+  #           DEPLOY_ENV_TG="green"
+  #           echo "Deploying to Green environment (from commit message)."
+  #         else
+  #           echo "No environment specified in commit message! Please use '[blue]' or '[green]' in the commit message."
+  #           exit 1
+  #         fi
 
-          # Determine which environment was selected for deployment
-          if [ "$DEPLOY_ENV_TG" == "blue" ]; then
-            echo "Deployment was to Blue ($ENV_BLUE), swapping Blue with Green ($ENV_GREEN)."
-            SOURCE_ENV=$ENV_BLUE
-            TARGET_ENV=$ENV_GREEN
-          elif [ "$DEPLOY_ENV_TG" == "green" ]; then
-            echo "Deployment was to Green ($ENV_GREEN), swapping Green with Blue ($ENV_BLUE)."
-            SOURCE_ENV=$ENV_GREEN
-            TARGET_ENV=$ENV_BLUE
-          else
-            echo "Invalid environment selected: ${{ needs.build-and-deploy.outputs.deploy_env }}"
-            exit 1
-          fi
+  #         # Determine which environment was selected for deployment
+  #         if [ "$DEPLOY_ENV_TG" == "blue" ]; then
+  #           echo "Deployment was to Blue ($ENV_BLUE), swapping Blue with Green ($ENV_GREEN)."
+  #           SOURCE_ENV=$ENV_BLUE
+  #           TARGET_ENV=$ENV_GREEN
+  #         elif [ "$DEPLOY_ENV_TG" == "green" ]; then
+  #           echo "Deployment was to Green ($ENV_GREEN), swapping Green with Blue ($ENV_BLUE)."
+  #           SOURCE_ENV=$ENV_GREEN
+  #           TARGET_ENV=$ENV_BLUE
+  #         else
+  #           echo "Invalid environment selected: ${{ needs.build-and-deploy.outputs.deploy_env }}"
+  #           exit 1
+  #         fi
 
-          # Swap CNAMEs to make the new environment live
-          echo "Swapping CNAMEs: $SOURCE_ENV → $TARGET_ENV"
-          aws elasticbeanstalk swap-environment-cnames \
-            --source-environment-name "$SOURCE_ENV" \
-            --destination-environment-name "$TARGET_ENV"
+  #         # Swap CNAMEs to make the new environment live
+  #         echo "Swapping CNAMEs: $SOURCE_ENV → $TARGET_ENV"
+  #         aws elasticbeanstalk swap-environment-cnames \
+  #           --source-environment-name "$SOURCE_ENV" \
+  #           --destination-environment-name "$TARGET_ENV"
       
-          # Fetch the CNAME of the environment (the one with the new version)
-          ENV_CNAME=$(aws elasticbeanstalk describe-environments \
-            --application-name $APP_NAME \
-            --environment-names $TARGET_ENV \
-            --query "Environments[0].CNAME" \
-            --output text)
+  #         # Fetch the CNAME of the environment (the one with the new version)
+  #         ENV_CNAME=$(aws elasticbeanstalk describe-environments \
+  #           --application-name $APP_NAME \
+  #           --environment-names $TARGET_ENV \
+  #           --query "Environments[0].CNAME" \
+  #           --output text)
       
-          echo "Live environment CNAME: $ENV_CNAME"
+  #         echo "Live environment CNAME: $ENV_CNAME"
