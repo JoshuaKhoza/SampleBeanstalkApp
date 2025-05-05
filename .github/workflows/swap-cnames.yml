@@ -1,11 +1,15 @@
 name: Swap Blue-Green Envs
 
 on:
-  workflow_dispatch:
-  workflow_run:
-    workflows: ["Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)"]
-    types:
-      - completed
+    workflow_dispatch:
+      inputs:
+        environment:
+          description: 'Which environment to swap to (blue/green)'
+          default: 'blue'
+    workflow_run:
+      workflows: ["Deploy .NET App to Elastic Beanstalk"]
+      types:
+        - completed
   
 jobs:
   swap_cnames:
@@ -30,39 +34,62 @@ jobs:
 
       - name: Swap Blue-Green Environments
         run: |
-          # Get the version labels for both environments
-          BLUE_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
+            # Get version labels
+            BLUE_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
             --application-name $APP_NAME \
             --environment-names $ENV_BLUE \
             --query "Environments[0].VersionLabel" \
             --output text)
-      
-          GREEN_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
+        
+            GREEN_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
             --application-name $APP_NAME \
             --environment-names $ENV_GREEN \
             --query "Environments[0].VersionLabel" \
             --output text)
-
-          # Determine which environment to swap
-          echo "Swap environments: Blue Version - $BLUE_VERSION_LABEL, Green Version - $GREEN_VERSION_LABEL"
-          
-          # Get environment names and decide which is live
-          if [[ "$BLUE_VERSION_LABEL" == "$GREEN_VERSION_LABEL" ]]; then
-            echo "Both environments are identical, no swap needed"
-            exit 0
-          fi
-
-          # Swap the CNAMEs between Blue and Green environments
-          echo "Swapping CNAMEs between $ENV_BLUE and $ENV_GREEN"
-          aws elasticbeanstalk swap-environment-cnames \
-            --source-environment-name $ENV_BLUE \
-            --destination-environment-name $ENV_GREEN
-
-          # Fetch and output the live environment CNAME
-          ENV_CNAME=$(aws elasticbeanstalk describe-environments \
+        
+            echo "Blue version: $BLUE_VERSION_LABEL"
+            echo "Green version: $GREEN_VERSION_LABEL"
+        
+            # Determine trigger type and target environment
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            DEPLOY_ENV_TG="${{ github.event.inputs.environment }}"
+            echo "Manual trigger via workflow_dispatch: $DEPLOY_ENV_TG"
+            else
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            echo "Commit message: $COMMIT_MSG"
+            if [[ "$COMMIT_MSG" == *"[blue]"* ]]; then
+                DEPLOY_ENV_TG="blue"
+            elif [[ "$COMMIT_MSG" == *"[green]"* ]]; then
+                DEPLOY_ENV_TG="green"
+            else
+                echo "No [blue] or [green] tag found in commit message. Aborting."
+                exit 1
+            fi
+            echo "Auto trigger via workflow_run. Parsed environment: $DEPLOY_ENV_TG"
+            fi
+        
+            # Define source and target environments based on desired deployment
+            if [ "$DEPLOY_ENV_TG" == "blue" ]; then
+            SOURCE_ENV=$ENV_BLUE
+            TARGET_ENV=$ENV_GREEN
+            elif [ "$DEPLOY_ENV_TG" == "green" ]; then
+            SOURCE_ENV=$ENV_GREEN
+            TARGET_ENV=$ENV_BLUE
+            else
+            echo "Invalid environment: $DEPLOY_ENV_TG"
+            exit 1
+            fi
+        
+            echo "Swapping CNAMEs: $SOURCE_ENV → $TARGET_ENV"
+            aws elasticbeanstalk swap-environment-cnames \
+            --source-environment-name "$SOURCE_ENV" \
+            --destination-environment-name "$TARGET_ENV"
+        
+            ENV_CNAME=$(aws elasticbeanstalk describe-environments \
             --application-name $APP_NAME \
-            --environment-names $ENV_GREEN \
+            --environment-names $TARGET_ENV \
             --query "Environments[0].CNAME" \
             --output text)
-          
-          echo "Live environment CNAME is: $ENV_CNAME"
+        
+            echo "Live environment CNAME: $ENV_CNAME"
+        

@@ -1,4 +1,4 @@
-name: Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)
+name: Deploy .NET App to Elastic Beanstalk
 
 on:
   workflow_dispatch:
