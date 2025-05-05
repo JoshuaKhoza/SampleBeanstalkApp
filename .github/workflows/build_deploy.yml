@@ -106,39 +106,6 @@ jobs:
           exit 1
         fi
 
-    # - name: Determine the selected environment from commit message
-    #   id: determine-env
-    #   run: |
-    #     # Get the most recent commit message
-    #     COMMIT_MSG=$(git log -1 --pretty=%B)
-    #     echo "Commit message: $COMMIT_MSG"
-
-    #     # Check if the commit message contains [blue] or [green]
-    #     if [[ "$COMMIT_MSG" == *"[blue]"* ]]; then
-    #       DEPLOY_ENV_TG="blue"
-    #       echo "Deploying to Blue environment (from commit message)."
-    #     elif [[ "$COMMIT_MSG" == *"[green]"* ]]; then
-    #       DEPLOY_ENV_TG="green"
-    #       echo "Deploying to Green environment (from commit message)."
-    #     else
-    #       echo "No environment specified in commit message! Please use '[blue]' or '[green]' in the commit message."
-    #       exit 1
-    #     fi
-
-    #     echo "deploy_env_tg=$DEPLOY_ENV_TG" >> $GITHUB_ENV  # Use GITHUB_ENV to pass to next steps
-    #     echo "deploy_env_tg=$DEPLOY_ENV_TG" >> $GITHUB_OUTPUT  # Make it available to the next job
-    #     echo "environment specified: $DEPLOY_ENV_TG"
-
-    #     # Set the corresponding environment
-    #     if [ "$DEPLOY_ENV_TG" == "blue" ]; then
-    #       echo "deploy_env=${ENV_BLUE}" >> $GITHUB_OUTPUT
-    #     elif [ "$DEPLOY_ENV_TG" == "green" ]; then
-    #       echo "deploy_env=${ENV_GREEN}" >> $GITHUB_OUTPUT
-    #     else
-    #       echo "Invalid environment specified!"
-    #       exit 1
-    #     fi
-
     - name: Deploy to selected environment
       run: |
         aws elasticbeanstalk create-application-version \

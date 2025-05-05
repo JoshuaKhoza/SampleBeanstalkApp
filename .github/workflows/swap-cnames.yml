@@ -1,11 +1,11 @@
 name: swap blue-green
 
 on:
-    workflow_dispatch:
-      inputs:
-        environment:
-          description: 'Which environment to swap to (blue/green)'
-          default: 'blue'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Which environment to swap to (blue/green)'
+        default: 'blue'
   
 jobs:
   swap_cnames:
@@ -18,9 +18,6 @@ jobs:
       ENV_GREEN: ${{ secrets.EB_ENV_GREEN }}
       ENV_BLUE: ${{ secrets.EB_ENV_BLUE }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
