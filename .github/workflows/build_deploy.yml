@@ -24,6 +24,7 @@ jobs:
       APP_NAME: ${{ secrets.EB_APP_NAME }}
       ENV_GREEN: ${{ secrets.EB_ENV_GREEN }}
       ENV_BLUE: ${{ secrets.EB_ENV_BLUE }}
+      WORKFLOW_ENV_INPUT: ${{ github.event.inputs.deploy_environment }}
 
     steps:
     - name: Checkout code
@@ -75,8 +76,8 @@ jobs:
     - name: Determine the selected environment
       id: determine-env
       run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          DEPLOY_ENV_TG="${{ github.event.inputs.deploy_environment }}"
+        if [ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ] && [ -n "$WORKFLOW_ENV_INPUT" ]; then
+          DEPLOY_ENV_TG="$WORKFLOW_ENV_INPUT"
           echo "Triggered by workflow_dispatch. Selected environment: $DEPLOY_ENV_TG"
         else
           COMMIT_MSG=$(git log -1 --pretty=%B)
