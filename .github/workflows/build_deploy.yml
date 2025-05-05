@@ -185,17 +185,16 @@ jobs:
             --query "Environments[0].VersionLabel" \
             --output text)
 
-      - name: Determine deployment target and swap environments
+      - name: Determine the selected environment from commit message
         id: determine-env
         env:
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          WORKFLOW_ENV_INPUT: ${{ github.event.inputs.deploy_environment }}
           ENV_BLUE: ${{ env.ENV_BLUE }}
           ENV_GREEN: ${{ env.ENV_GREEN }}
         run: |
-   
+          # Get the most recent commit message
           COMMIT_MSG=$(git log -1 --pretty=%B)
-          echo "Commit message: $COMMIT_MSG"\
+          echo "Commit message: $COMMIT_MSG"
+          # Check if the commit message contains [blue] or [green]
           if [[ "$COMMIT_MSG" == *"[blue]"* ]]; then
             DEPLOY_ENV_TG="blue"
             echo "Deploying to Blue environment (from commit message)."
@@ -203,13 +202,9 @@ jobs:
             DEPLOY_ENV_TG="green"
             echo "Deploying to Green environment (from commit message)."
           else
-            echo "No environment specified! use '[blue]' or '[green]' in the commit message."
+            echo "No environment specified in commit message! Please use '[blue]' or '[green]' in the commit message."
             exit 1
           fi
-      
-          echo "deploy_env_tg=$DEPLOY_ENV_TG" >> $GITHUB_ENV
-          echo "deploy_env_tg=$DEPLOY_ENV_TG" >> $GITHUB_OUTPUT
-      
           # Determine which environment was selected for deployment
           if [ "$DEPLOY_ENV_TG" == "blue" ]; then
             echo "Deployment was to Blue ($ENV_BLUE), swapping Blue with Green ($ENV_GREEN)."
@@ -220,7 +215,7 @@ jobs:
             SOURCE_ENV=$ENV_GREEN
             TARGET_ENV=$ENV_BLUE
           else
-            echo "Invalid environment selected: $DEPLOY_ENV_TG"
+            echo "Invalid environment selected: ${{ needs.build-and-deploy.outputs.deploy_env }}"
             exit 1
           fi          
 
