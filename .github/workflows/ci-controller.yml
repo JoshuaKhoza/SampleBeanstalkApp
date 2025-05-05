@@ -17,7 +17,7 @@ jobs:
       - name: Trigger Deploy App Infra Workflow
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: Deploy App Infra
+          workflow: deploy app infra
           token: ${{ secrets.GITHUB_TOKEN }}
 
   trigger-tests:
