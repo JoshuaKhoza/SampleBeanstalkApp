@@ -1,11 +1,12 @@
-name: Swap Blue-Green Environments
+name: Swap Blue-Green Envs
 
 on:
+  workflow_dispatch:
   workflow_run:
-    workflows: ["Build and Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)"]
+    workflows: ["Deploy .NET App to Elastic Beanstalk (Blue-Green + Manual Approval)"]
     types:
       - completed
-
+  
 jobs:
   swap_cnames:
     runs-on: ubuntu-latest
