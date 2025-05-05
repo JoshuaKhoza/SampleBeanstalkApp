@@ -1,12 +1,9 @@
-name: Run Unit Tests
+name: run unit tests
 
 on:
   workflow_dispatch:
-  # push:
-  #   branches:
-  #     - main  # Trigger on commits to main branch
   workflow_run:
-    workflows: ["Deploy App Infra"]
+    workflows: ["deploy app infra"]
     types:
       - completed
 

@@ -1,4 +1,4 @@
-name: Swap Blue-Green Envs
+name: swap blue-green
 
 on:
     workflow_dispatch:
@@ -7,7 +7,7 @@ on:
           description: 'Which environment to swap to (blue/green)'
           default: 'blue'
     workflow_run:
-      workflows: ["Deploy .NET App to Elastic Beanstalk"]
+      workflows: ["deploy .net app to elastic beanstalk"]
       types:
         - completed
   

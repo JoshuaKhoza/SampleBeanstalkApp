@@ -1,4 +1,4 @@
-name: Deploy .NET App to Elastic Beanstalk
+name: deploy .net app to elastic beanstalk
 
 on:
   workflow_dispatch:

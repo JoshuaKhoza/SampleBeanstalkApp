@@ -1,4 +1,4 @@
-name: CI/CD Orchestrator
+name: ci/cd orchestrator
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
       - name: Trigger Run Unit Tests Workflow
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: Run Unit Tests
+          workflow: run unit tests
           token: ${{ secrets.GITHUB_TOKEN }}
 
   wait-and-deploy:
@@ -55,5 +55,5 @@ jobs:
       - name: Trigger Final Deploy Workflow
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: Deploy .NET App to Elastic Beanstalk
+          workflow: deploy .net app to elastic beanstalk
           token: ${{ secrets.GITHUB_TOKEN }}
