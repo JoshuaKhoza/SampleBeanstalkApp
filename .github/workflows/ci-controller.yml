@@ -55,5 +55,5 @@ jobs:
       - name: Trigger Final Deploy Workflow
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: deploy .net app to elastic beanstalk
+          workflow: build and deploy
           token: ${{ secrets.GITHUB_TOKEN }}
