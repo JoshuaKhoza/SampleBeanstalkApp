@@ -6,10 +6,6 @@ on:
         environment:
           description: 'Which environment to swap to (blue/green)'
           default: 'blue'
-    workflow_run:
-      workflows: ["deploy .net app to elastic beanstalk"]
-      types:
-        - completed
   
 jobs:
   swap_cnames:
@@ -50,33 +46,15 @@ jobs:
             echo "Blue version: $BLUE_VERSION_LABEL"
             echo "Green version: $GREEN_VERSION_LABEL"
         
-            # Determine trigger type and target environment
-            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            DEPLOY_ENV_TG="${{ github.event.inputs.environment }}"
-            echo "Manual trigger via workflow_dispatch: $DEPLOY_ENV_TG"
-            else
-            COMMIT_MSG=$(git log -1 --pretty=%B)
-            echo "Commit message: $COMMIT_MSG"
-            if [[ "$COMMIT_MSG" == *"[blue]"* ]]; then
-                DEPLOY_ENV_TG="blue"
-            elif [[ "$COMMIT_MSG" == *"[green]"* ]]; then
-                DEPLOY_ENV_TG="green"
-            else
-                echo "No [blue] or [green] tag found in commit message. Aborting."
-                exit 1
-            fi
-            echo "Auto trigger via workflow_run. Parsed environment: $DEPLOY_ENV_TG"
-            fi
-        
             # Define source and target environments based on desired deployment
-            if [ "$DEPLOY_ENV_TG" == "blue" ]; then
+            if [ "${{ github.event.inputs.environment }}" == "blue" ]; then
             SOURCE_ENV=$ENV_BLUE
             TARGET_ENV=$ENV_GREEN
-            elif [ "$DEPLOY_ENV_TG" == "green" ]; then
+            elif [ "${{ github.event.inputs.environment }}" == "green" ]; then
             SOURCE_ENV=$ENV_GREEN
             TARGET_ENV=$ENV_BLUE
             else
-            echo "Invalid environment: $DEPLOY_ENV_TG"
+            echo "Invalid environment ${{ github.event.inputs.environment }}"
             exit 1
             fi
         
@@ -91,5 +69,7 @@ jobs:
             --query "Environments[0].CNAME" \
             --output text)
         
-            echo "Live environment CNAME: $ENV_CNAME"
+            echo "$ENV_CNAME" > cname.txt
+            echo "Live environment CNAME: $(cat cname.txt)"
+
         

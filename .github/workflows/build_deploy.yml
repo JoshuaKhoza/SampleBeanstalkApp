@@ -128,6 +128,8 @@ jobs:
 
         echo "CNAME: $CNAME"
         echo "cname=$CNAME" >> "$GITHUB_OUTPUT"
+        echo "CNAME: $CNAME" > cname.txt
+        echo "Live environment CNAME: $(cat cname.txt)"
 
     - name: Wait for the environment to be healthy
       run: |
