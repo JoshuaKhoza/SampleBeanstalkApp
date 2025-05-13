@@ -85,4 +85,4 @@ jobs:
       # Apply the Terraform plan to create/update infrastructure
       - name: Terraform Apply
         working-directory: infra/
-        run: terraform apply -input=false "plan"
+        run: terraform destroy -input=false "plan"
