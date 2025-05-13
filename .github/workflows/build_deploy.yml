@@ -1,6 +1,5 @@
 # Build and Deploy Workflow
 #
-# Purpose:
 # This workflow builds the application, deploys it to the specified environment (blue or green),
 # waits for manual approval, and then swaps the environments to make the new deployment live.
 #
