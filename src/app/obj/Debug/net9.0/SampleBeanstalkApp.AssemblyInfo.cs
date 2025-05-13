@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SampleBeanstalkApp")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+8a3370362e5a2b0582fd8e15263c54b646118d44")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5228b3cef6d0247edffeb400185666a03534c26b")]
 [assembly: System.Reflection.AssemblyProductAttribute("SampleBeanstalkApp")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SampleBeanstalkApp")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

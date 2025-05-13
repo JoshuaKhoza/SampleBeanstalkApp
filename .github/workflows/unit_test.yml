@@ -1,8 +1,20 @@
+# Unit Tests Workflow
+#
+# Purpose:
+# This workflow runs automated unit tests for the application to ensure code quality
+# and prevent regressions. It can be triggered manually or automatically after the
+# infrastructure deployment workflow completes.
+#
+# Testing Strategy:
+# - Builds the application in Release configuration
+# - Runs all unit tests using the .NET test framework
+# - Fails the workflow if any tests fail
+
 name: run unit tests
 
 on:
-  workflow_dispatch:
-  workflow_run:
+  workflow_dispatch:  # Manual trigger
+  workflow_run:       # Automatic trigger after infrastructure deployment
     workflows: ["deploy app infra"]
     types:
       - completed
@@ -12,22 +24,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout the repository code
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # Set up .NET environment for building and testing
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0'
 
+      # Restore NuGet packages
       - name: Restore dependencies
         run: dotnet restore
         working-directory: src/app
 
+      # Build the application in Release configuration
       - name: Build
         run: dotnet build --configuration Release --no-restore
         working-directory: src/app
 
+      # Run all unit tests
       - name: Run Unit Tests
         run: dotnet test --no-restore
         working-directory: src/app

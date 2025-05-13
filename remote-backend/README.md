@@ -20,6 +20,6 @@ python deploy.py
 
 ### 3. outputs examples 
 ```
-db_backend = "terraform-state-12345678910-elb-app-infra"
-s3_backend = "terraform-state-12345678910-elb-app-infra"
+db_backend = "terraform-state-267084114047-elb-app-infra"
+s3_backend = "terraform-state-267084114047-elb-app-infra"
 ```

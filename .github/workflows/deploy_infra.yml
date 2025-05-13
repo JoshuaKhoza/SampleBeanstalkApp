@@ -1,13 +1,25 @@
+# Deploy Application Infrastructure Workflow
+#
+# Purpose:
+# This workflow provisions and updates the AWS infrastructure required for the application
+# using Terraform. It creates/updates Elastic Beanstalk environments, S3 buckets, and other
+# necessary resources defined in the Terraform configuration.
+#
+# Infrastructure as Code:
+# - Uses Terraform to manage AWS resources
+# - Stores state in S3 with DynamoDB locking
+# - Validates infrastructure changes before applying
+
 name: deploy app infra
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger from GitHub UI or other workflows
 
 permissions:
-  id-token: write
-  contents: read
-  security-events: write
-  actions: read
+  id-token: write     # Required for AWS authentication
+  contents: read      # Read access to repository contents
+  security-events: write  # Write security events
+  actions: read       # Read actions
 
 jobs:
   deploy-infra:
@@ -15,20 +27,22 @@ jobs:
 
     env:
       AWS_REGION: ${{ secrets.AWS_REGION }}
-      S3_BACKEND: ${{secrets.S3_BACKEND_BUCKET }}
-      DB_BACKEND: ${{ secrets.DYNAMODB_BACKEND_TABLE }}
-      APP_NAME: ${{ secrets.EB_APP_NAME }}
-      ENV_BLUE: ${{ secrets.EB_ENV_BLUE }}
-      EB_ENV_GREEN: ${{ secrets.EB_ENV_GREEN }}
-      APP_SOLUTION_BUCKET: ${{ secrets.SOLUTION_S3_BUCKET }}
-      APP_SOLUTION_STACK: ${{ secrets.SOLUTION_STACK_VERSION }}
+      S3_BACKEND: ${{secrets.S3_BACKEND_BUCKET }}  # S3 bucket for Terraform state
+      DB_BACKEND: ${{ secrets.DYNAMODB_BACKEND_TABLE }}  # DynamoDB table for state locking
+      APP_NAME: ${{ secrets.EB_APP_NAME }}  # Elastic Beanstalk application name
+      ENV_BLUE: ${{ secrets.EB_ENV_BLUE }}  # Blue environment name
+      EB_ENV_GREEN: ${{ secrets.EB_ENV_GREEN }}  # Green environment name
+      APP_SOLUTION_BUCKET: ${{ secrets.SOLUTION_S3_BUCKET }}  # S3 bucket for application code
+      APP_SOLUTION_STACK: ${{ secrets.SOLUTION_STACK_VERSION }}  # Elastic Beanstalk solution stack
 
     steps:
+      # Checkout the repository code
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0
-      
+          fetch-depth: 0  # Full history for potential use in Terraform
+
+      # Configure AWS credentials for accessing AWS services
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -36,11 +50,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # Set up Terraform CLI
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.6.6  # Pin to a stable version
 
+      # Initialize Terraform with remote backend configuration
       - name: Terraform Init
         working-directory: infra/
         run: |
@@ -51,10 +67,12 @@ jobs:
             -backend-config="key=terraform/terraform-app-infra.tfstate" \
             -backend-config="encrypt=true"
 
+      # Validate Terraform configuration
       - name: Terraform Validate
         working-directory: infra/
         run: terraform validate
 
+      # Create execution plan for infrastructure changes
       - name: Terraform Plan
         working-directory: infra/
         env:
@@ -64,6 +82,7 @@ jobs:
           TF_VAR_solution_stack: ${{ env.APP_SOLUTION_STACK }}
         run: terraform plan -input=false -out="plan"
 
+      # Apply the Terraform plan to create/update infrastructure
       - name: Terraform Apply
         working-directory: infra/
         run: terraform apply -input=false "plan"

@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "mMmdqVNa+o4=",
+  "dgSpecHash": "BRFGCT5rhF4=",
   "success": true,
-  "projectFilePath": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\SampleBeanstalkApp.csproj",
+  "projectFilePath": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\app\\SampleBeanstalkApp.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }

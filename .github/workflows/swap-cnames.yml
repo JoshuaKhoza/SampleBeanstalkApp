@@ -1,3 +1,14 @@
+# Swap Blue-Green Environments Workflow
+#
+# Purpose:
+# This workflow manually swaps the CNAMEs between blue and green Elastic Beanstalk environments,
+# allowing for immediate traffic redirection between environments without a full deployment.
+#
+# Use Cases:
+# - Quick rollback to previous environment if issues are found
+# - Manual control over which environment serves production traffic
+# - Testing traffic routing without deploying new code
+
 name: swap blue-green
 
 on:
@@ -18,6 +29,7 @@ jobs:
       ENV_GREEN: ${{ secrets.EB_ENV_GREEN }}
       ENV_BLUE: ${{ secrets.EB_ENV_BLUE }}
     steps:
+      # Configure AWS credentials for accessing Elastic Beanstalk
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -25,9 +37,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # Swap CNAMEs between blue and green environments
       - name: Swap Blue-Green Environments
         run: |
-            # Get version labels
+            # Get version labels for both environments to display current versions
             BLUE_VERSION_LABEL=$(aws elasticbeanstalk describe-environments \
             --application-name $APP_NAME \
             --environment-names $ENV_BLUE \
@@ -43,7 +56,8 @@ jobs:
             echo "Blue version: $BLUE_VERSION_LABEL"
             echo "Green version: $GREEN_VERSION_LABEL"
         
-            # Define source and target environments based on desired deployment
+            # Define source and target environments based on the selected environment
+            # This determines which environment will receive the production traffic
             if [ "${{ github.event.inputs.environment }}" == "blue" ]; then
             SOURCE_ENV=$ENV_BLUE
             TARGET_ENV=$ENV_GREEN
@@ -55,11 +69,13 @@ jobs:
             exit 1
             fi
         
+            # Execute the CNAME swap to redirect traffic
             echo "Swapping CNAMEs: $SOURCE_ENV → $TARGET_ENV"
             aws elasticbeanstalk swap-environment-cnames \
             --source-environment-name "$SOURCE_ENV" \
             --destination-environment-name "$TARGET_ENV"
         
+            # Get the new CNAME of the target environment after the swap
             ENV_CNAME=$(aws elasticbeanstalk describe-environments \
             --application-name $APP_NAME \
             --environment-names $TARGET_ENV \
@@ -68,5 +84,3 @@ jobs:
         
             echo "$ENV_CNAME" > cname.txt
             echo "Live environment CNAME: $(cat cname.txt)"
-
-        

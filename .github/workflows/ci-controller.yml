@@ -1,35 +1,63 @@
+# CI/CD Orchestrator Workflow
+# 
+# Purpose:
+# This workflow coordinates the entire CI/CD pipeline by triggering other workflows in sequence.
+# It implements a blue/green deployment strategy based on commit message tags ([blue] or [green]).
+#
+# Workflow Sequence:
+# 1. Deploy infrastructure resources (deploy_infra.yml)
+# 2. Run unit tests (unit_test.yml)
+# 3. Determine deployment environment from commit message
+# 4. Trigger build and deployment to the selected environment (build_deploy.yml)
+#
+# Blue/Green Deployment Strategy:
+# - Two identical environments (blue and green) are maintained
+# - New code is deployed to the inactive environment
+# - After testing and approval, traffic is switched to the newly deployed environment
+# - This ensures zero-downtime deployments and easy rollbacks
+
 name: ci/cd orchestrator
 
+# Trigger conditions for this workflow
 on:
-  workflow_dispatch:
-  push:
+  workflow_dispatch:  # Manual trigger from GitHub UI
+  push:              # Automatic trigger on push to main branch
     branches:
       - main
 
+# Required permissions for this workflow
 permissions:
-  contents: read
-  actions: write
+  contents: read     # Read access to repository contents
+  actions: write     # Write access to trigger other workflows
 
 jobs:
+  # Job 1: Deploy infrastructure resources needed for the application
+  # This job triggers the deploy_infra.yml workflow which provisions or updates
+  # AWS resources like Elastic Beanstalk environments, S3 buckets, etc.
   trigger-infra:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Deploy App Infra Workflow
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: deploy app infra
+          workflow: deploy app infra  # Name of the infrastructure deployment workflow
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  # Job 2: Run unit tests to validate code quality
+  # This job triggers the unit_test.yml workflow which runs automated tests
+  # to ensure code quality and prevent regressions
   trigger-tests:
     runs-on: ubuntu-latest
-    needs: trigger-infra 
+    needs: trigger-infra  # Only run after infrastructure is deployed
     steps:
       - name: Trigger Run Unit Tests Workflow
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: run unit tests
+          workflow: run unit tests  # Name of the unit test workflow
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  # Job 3: Wait for previous jobs to complete, then deploy the application
+  # This job determines which environment to deploy to and triggers the final deployment
   wait-and-deploy:
     runs-on: ubuntu-latest
     needs: [trigger-infra, trigger-tests]  # Ensures this job runs after both workflows succeed
@@ -40,6 +68,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # Determine which environment (blue or green) to deploy to based on commit message
+      # Commit must include [blue] or [green] tag to specify the target environment
+      # Example commit messages:
+      # - "Update login page [blue]" - Deploys to blue environment
+      # - "Fix navigation bug [green]" - Deploys to green environment
       - name: Determine the selected environment from commit message
         id: determine-env
         run: |
@@ -52,8 +85,13 @@ jobs:
           fi
           echo "deploy_env=$DEPLOY_ENV" >> $GITHUB_OUTPUT
 
+      # Trigger the final deployment workflow with the selected environment
+      # This passes the environment parameter to the build_deploy.yml workflow
+      # which handles building the application and deploying it to the selected environment
       - name: Trigger Final Deploy Workflow
         uses: benc-uk/workflow-dispatch@v1
         with:
-          workflow: build and deploy
+          workflow: build and deploy  # Name of the build and deploy workflow
           token: ${{ secrets.GITHUB_TOKEN }}
+          inputs: |
+            deploy_environment: ${{ steps.determine-env.outputs.deploy_env }}  # Pass the environment parameter

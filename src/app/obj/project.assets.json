@@ -13,11 +13,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\SampleBeanstalkApp.csproj",
+      "projectUniqueName": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\app\\SampleBeanstalkApp.csproj",
       "projectName": "SampleBeanstalkApp",
-      "projectPath": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\SampleBeanstalkApp.csproj",
+      "projectPath": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\app\\SampleBeanstalkApp.csproj",
       "packagesPath": "C:\\Users\\client\\.nuget\\packages\\",
-      "outputPath": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\obj\\",
+      "outputPath": "C:\\Thomas Madia Project\\cicd_deployment\\SampleBeanstalkApp\\src\\app\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\client\\AppData\\Roaming\\NuGet\\NuGet.Config"
