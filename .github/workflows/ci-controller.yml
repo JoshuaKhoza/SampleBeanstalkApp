@@ -93,5 +93,5 @@ jobs:
         with:
           workflow: build and deploy  # Name of the build and deploy workflow
           token: ${{ secrets.GITHUB_TOKEN }}
-          inputs: |
-            deploy_environment: ${{ steps.determine-env.outputs.deploy_env }}  # Pass the environment parameter
+          # inputs: |
+          #   deploy_environment: ${{ steps.determine-env.outputs.deploy_env }}  # Pass the environment parameter
